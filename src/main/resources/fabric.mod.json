@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "id": "power-ruble",
+  "version": "${version}",
+  "name": "Power Ruble",
+  "description": "Server-side Fabric economy mod with ruble balances and player transfers.",
+  "authors": [
+    "power-ruble"
+  ],
+  "contact": {},
+  "license": "MIT",
+  "environment": "*",
+  "entrypoints": {
+    "main": [
+      "ru.powerruble.PowerRubleMod"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.15.11",
+    "minecraft": "1.20.1",
+    "fabric-api": "*",
+    "java": ">=17"
+  }
+}
