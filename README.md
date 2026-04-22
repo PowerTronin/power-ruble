@@ -11,7 +11,9 @@ Server-side Fabric 1.20.1 economy mod.
 - `/ruble take <player> <amount>` - remove rubles, operator-only.
 - `/ruble set <player> <amount>` - set balance, operator-only.
 
-Balances are saved in the overworld persistent state and survive server restarts.
+Player transfers can move the sender down to `-1000 RUB`. Operator `/ruble take` can move a player below zero without a fixed debt limit.
+
+Balances are saved in the overworld persistent state and survive server restarts, including negative balances.
 
 ## Build
 

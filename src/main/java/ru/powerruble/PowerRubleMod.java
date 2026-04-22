@@ -103,7 +103,7 @@ public final class PowerRubleMod implements ModInitializer {
         RubleState.TransferResult result = state.transfer(sender.getUuid(), target.getUuid(), amount);
 
         if (result == RubleState.TransferResult.NOT_ENOUGH_MONEY) {
-            source.sendError(Text.literal("Недостаточно рублей. Ваш баланс: " + format(state.getBalance(sender.getUuid()))));
+            source.sendError(Text.literal("Недостаточно рублей. После перевода баланс не может быть ниже " + format(RubleState.TRANSFER_DEBT_LIMIT) + ". Ваш баланс: " + format(state.getBalance(sender.getUuid()))));
             return 0;
         }
 
@@ -131,8 +131,8 @@ public final class PowerRubleMod implements ModInitializer {
 
     private static int take(ServerCommandSource source, ServerPlayerEntity player, long amount) {
         RubleState state = RubleState.get(source.getServer());
-        if (!state.subtract(player.getUuid(), amount)) {
-            source.sendError(Text.literal("Недостаточно рублей. Баланс игрока: " + format(state.getBalance(player.getUuid()))));
+        if (!state.subtractAllowingDebt(player.getUuid(), amount)) {
+            source.sendError(Text.literal("Баланс игрока слишком маленький для списания этой суммы."));
             return 0;
         }
 

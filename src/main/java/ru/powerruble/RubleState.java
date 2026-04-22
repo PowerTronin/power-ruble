@@ -9,6 +9,8 @@ import net.minecraft.world.PersistentState;
 import net.minecraft.world.PersistentStateManager;
 
 public final class RubleState extends PersistentState {
+    public static final long TRANSFER_DEBT_LIMIT = -1000L;
+
     private static final String STATE_KEY = PowerRubleMod.MOD_ID;
     private static final String BALANCES_KEY = "balances";
 
@@ -26,8 +28,7 @@ public final class RubleState extends PersistentState {
         for (String key : balanceData.getKeys()) {
             try {
                 UUID uuid = UUID.fromString(key);
-                long balance = Math.max(0L, balanceData.getLong(key));
-                state.balances.put(uuid, balance);
+                state.balances.put(uuid, balanceData.getLong(key));
             } catch (IllegalArgumentException exception) {
                 PowerRubleMod.LOGGER.warn("Skipping invalid ruble balance owner UUID '{}'", key);
             }
@@ -77,9 +78,19 @@ public final class RubleState extends PersistentState {
         return true;
     }
 
+    public boolean subtractAllowingDebt(UUID playerId, long amount) {
+        long current = getBalance(playerId);
+        if (Long.MIN_VALUE + amount > current) {
+            return false;
+        }
+
+        setBalance(playerId, current - amount);
+        return true;
+    }
+
     public TransferResult transfer(UUID senderId, UUID targetId, long amount) {
         long senderBalance = getBalance(senderId);
-        if (senderBalance < amount) {
+        if (senderBalance < TRANSFER_DEBT_LIMIT + amount) {
             return TransferResult.NOT_ENOUGH_MONEY;
         }
 
