@@ -30,6 +30,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "${GITHUB_REF_NAME}" \
-            build/libs/power-ruble-*.jar \
+            "build/libs/power-ruble-${GITHUB_REF_NAME#v}.jar" \
+            "build/libs/power-ruble-${GITHUB_REF_NAME#v}-sources.jar" \
             --title "Power Ruble ${GITHUB_REF_NAME}" \
-            --notes "First public release of Power Ruble. Includes server-side ruble balances, player transfers, and operator balance management commands."
+            --notes "Power Ruble release ${GITHUB_REF_NAME}."

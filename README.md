@@ -5,19 +5,23 @@ Server-side Fabric 1.20.1 economy mod.
 ## Commands
 
 - `/balance` - show your balance.
-- `/balance <player>` - show another player's balance, operator-only.
+- `/balance <player>` - show another player's balance, including offline players known to the server, operator-only.
 - `/pay <player> <amount>` - transfer currency to a player, including offline players known to the server.
 - `/topbalance` - show the richest balances. Can be disabled for regular players in config.
 - `/ruble help` - show mod commands.
-- `/ruble give <player> <amount>` - add rubles, operator-only.
-- `/ruble take <player> <amount>` - remove rubles, operator-only.
-- `/ruble set <player> <amount>` - set balance, operator-only.
-- `/ruble history <player>` - show recent economy operations, operator-only.
+- `/ruble give <player> <amount>` - add rubles, including offline players known to the server, operator-only.
+- `/ruble take <player> <amount>` - remove rubles, including offline players known to the server, operator-only.
+- `/ruble set <player> <amount>` - set balance, including offline players known to the server, operator-only.
+- `/ruble history <player>` - show recent economy operations, including offline players known to the server, operator-only.
 - `/ruble reload` - reload config, operator-only.
 
 Player transfers can move the sender down to the configured debt limit. Operator `/ruble take` can move a player below zero without a fixed debt limit.
 
 Balances are saved in the overworld persistent state and survive server restarts, including negative balances.
+
+On online-mode servers, commands do not create synthetic offline UUIDs for unknown player names. The player must be known to the server profile cache. Offline-mode servers use Minecraft's standard offline UUID format.
+
+The mod contains only server-side behavior, but its Fabric environment is set to `*` so it also loads in singleplayer/integrated-server testing.
 
 ## Config
 
