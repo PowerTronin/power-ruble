@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory;
 public final class PowerRubleMod implements ModInitializer {
     public static final String MOD_ID = "power-ruble";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
+    private static final UUID BANK_ID = UUID.nameUUIDFromBytes("PowerRuble:bank".getBytes(StandardCharsets.UTF_8));
 
     private static final SimpleCommandExceptionType EMPTY_PROFILE_EXCEPTION =
         new SimpleCommandExceptionType(Text.literal("Игрок не найден."));
@@ -71,6 +72,18 @@ public final class PowerRubleMod implements ModInitializer {
             );
 
             dispatcher.register(
+                CommandManager.literal("topdebt")
+                    .executes(context -> showTopDebt(context.getSource()))
+            );
+
+            dispatcher.register(
+                CommandManager.literal("bank")
+                    .then(CommandManager.literal("balance")
+                        .executes(context -> showBankBalance(context.getSource()))
+                    )
+            );
+
+            dispatcher.register(
                 CommandManager.literal("ruble")
                     .then(CommandManager.literal("help")
                         .executes(context -> showHelp(context.getSource()))
@@ -86,6 +99,40 @@ public final class PowerRubleMod implements ModInitializer {
                                 context.getSource(),
                                 singleProfile(GameProfileArgumentType.getProfileArgument(context, "player"))
                             ))
+                        )
+                    )
+                    .then(CommandManager.literal("debtors")
+                        .requires(source -> source.hasPermissionLevel(2))
+                        .executes(context -> showTopDebt(context.getSource()))
+                    )
+                    .then(CommandManager.literal("bank")
+                        .requires(source -> source.hasPermissionLevel(2))
+                        .then(CommandManager.literal("balance")
+                            .executes(context -> showBankBalance(context.getSource()))
+                        )
+                        .then(CommandManager.literal("give")
+                            .then(CommandManager.argument("amount", LongArgumentType.longArg(1))
+                                .executes(context -> giveBank(
+                                    context.getSource(),
+                                    LongArgumentType.getLong(context, "amount")
+                                ))
+                            )
+                        )
+                        .then(CommandManager.literal("take")
+                            .then(CommandManager.argument("amount", LongArgumentType.longArg(1))
+                                .executes(context -> takeBank(
+                                    context.getSource(),
+                                    LongArgumentType.getLong(context, "amount")
+                                ))
+                            )
+                        )
+                        .then(CommandManager.literal("set")
+                            .then(CommandManager.argument("amount", LongArgumentType.longArg(0))
+                                .executes(context -> setBank(
+                                    context.getSource(),
+                                    LongArgumentType.getLong(context, "amount")
+                                ))
+                            )
                         )
                     )
                     .then(CommandManager.literal("give")
@@ -137,6 +184,12 @@ public final class PowerRubleMod implements ModInitializer {
         if (config.topBalancePlayersEnabled() || source.hasPermissionLevel(2)) {
             sendMessage(source, message("help.top"));
         }
+        if (config.topDebtEnabled() || source.hasPermissionLevel(2)) {
+            sendMessage(source, message("help.topdebt"));
+        }
+        if (config.bankEnabled() || source.hasPermissionLevel(2)) {
+            sendMessage(source, message("help.bank"));
+        }
         sendMessage(source, message("help.self"));
 
         if (source.hasPermissionLevel(2)) {
@@ -145,6 +198,8 @@ public final class PowerRubleMod implements ModInitializer {
             sendMessage(source, message("help.admin.take"));
             sendMessage(source, message("help.admin.set"));
             sendMessage(source, message("help.admin.history"));
+            sendMessage(source, message("help.admin.debtors"));
+            sendMessage(source, message("help.admin.bank"));
             sendMessage(source, message("help.admin.reload"));
         }
 
@@ -211,21 +266,15 @@ public final class PowerRubleMod implements ModInitializer {
         state.rememberName(sender.getUuid(), playerName(sender));
         state.rememberName(targetId, targetName);
 
-        UUID feeRecipientId = null;
-        String feeRecipientName = null;
-        if (config.transferFeeAmount() > 0L && !config.transferFeeGoesToExchange()) {
-            GameProfile feeRecipient = findProfile(source, config.transferFeeRecipient());
-            feeRecipientId = profileId(source, feeRecipient);
-            feeRecipientName = feeRecipient.getName();
-            state.rememberName(feeRecipientId, feeRecipientName);
-        }
+        long feeAmount = calculateTransferFee(amount, config);
+        UUID feeRecipientId = feeRecipientId(source, state, feeAmount);
 
         RubleState.TransferResult result = state.transfer(
             sender.getUuid(),
             targetId,
             feeRecipientId,
             amount,
-            config.transferFeeAmount(),
+            feeAmount,
             config.transferDebtLimit()
         );
 
@@ -248,7 +297,7 @@ public final class PowerRubleMod implements ModInitializer {
             return 0;
         }
 
-        String fee = format(config.transferFeeAmount());
+        String fee = format(feeAmount);
         sendMessage(source, message("pay.sent", "amount", format(amount), "target", targetName, "fee", fee));
         ServerPlayerEntity onlineTarget = source.getServer().getPlayerManager().getPlayer(targetId);
         if (onlineTarget != null) {
@@ -258,8 +307,35 @@ public final class PowerRubleMod implements ModInitializer {
         String timestamp = Instant.now().toString();
         state.addHistory(sender.getUuid(), timestamp + " -" + format(amount) + " -> " + targetName + ", fee " + fee);
         state.addHistory(targetId, timestamp + " +" + format(amount) + " <- " + playerName(sender));
-        if (feeRecipientId != null && config.transferFeeAmount() > 0L) {
+        if (feeRecipientId != null && feeAmount > 0L) {
             state.addHistory(feeRecipientId, timestamp + " +" + fee + " fee <- " + playerName(sender));
+        }
+
+        return 1;
+    }
+
+    private static int showTopDebt(ServerCommandSource source) {
+        if (!config.topDebtEnabled() && !source.hasPermissionLevel(2)) {
+            source.sendError(Text.literal(message("topdebt.disabled")));
+            return 0;
+        }
+
+        RubleState state = RubleState.get(source.getServer());
+        var entries = state.topDebts(config.topBalanceSize());
+        if (entries.isEmpty()) {
+            sendMessage(source, message("topdebt.empty"));
+            return 1;
+        }
+
+        sendMessage(source, message("topdebt.header"));
+        for (int index = 0; index < entries.size(); index++) {
+            RubleState.BalanceEntry entry = entries.get(index);
+            sendMessage(source, message(
+                "topdebt.entry",
+                "rank", Integer.toString(index + 1),
+                "player", entry.name(),
+                "amount", format(entry.balance())
+            ));
         }
 
         return 1;
@@ -372,6 +448,53 @@ public final class PowerRubleMod implements ModInitializer {
         return 1;
     }
 
+    private static int showBankBalance(ServerCommandSource source) {
+        if (!config.bankEnabled() && !source.hasPermissionLevel(2)) {
+            source.sendError(Text.literal(message("bank.disabled")));
+            return 0;
+        }
+
+        RubleState state = RubleState.get(source.getServer());
+        rememberBank(state);
+        sendMessage(source, message("bank.balance", "amount", format(state.getBalance(BANK_ID))));
+        return 1;
+    }
+
+    private static int giveBank(ServerCommandSource source, long amount) {
+        RubleState state = RubleState.get(source.getServer());
+        rememberBank(state);
+        if (!state.add(BANK_ID, amount)) {
+            source.sendError(Text.literal(message("bank.overflow")));
+            return 0;
+        }
+
+        sendMessage(source, message("bank.give.done", "amount", format(amount), "balance", format(state.getBalance(BANK_ID))));
+        state.addHistory(BANK_ID, Instant.now() + " +" + format(amount) + " bank give");
+        return 1;
+    }
+
+    private static int takeBank(ServerCommandSource source, long amount) {
+        RubleState state = RubleState.get(source.getServer());
+        rememberBank(state);
+        if (!state.subtract(BANK_ID, amount)) {
+            source.sendError(Text.literal(message("bank.not-enough")));
+            return 0;
+        }
+
+        sendMessage(source, message("bank.take.done", "amount", format(amount), "balance", format(state.getBalance(BANK_ID))));
+        state.addHistory(BANK_ID, Instant.now() + " -" + format(amount) + " bank take");
+        return 1;
+    }
+
+    private static int setBank(ServerCommandSource source, long amount) {
+        RubleState state = RubleState.get(source.getServer());
+        rememberBank(state);
+        state.setBalance(BANK_ID, amount);
+        sendMessage(source, message("bank.set.done", "amount", format(amount)));
+        state.addHistory(BANK_ID, Instant.now() + " =" + format(amount) + " bank set");
+        return 1;
+    }
+
     private static void sendMessage(ServerCommandSource source, String message) {
         ServerPlayerEntity player = source.getPlayer();
         if (player != null) {
@@ -418,6 +541,62 @@ public final class PowerRubleMod implements ModInitializer {
         }
 
         throw UNKNOWN_ONLINE_PROFILE_EXCEPTION.create(profile.getName());
+    }
+
+    static long calculateTransferFee(long amount, RubleConfig config) {
+        long fixedFee = config.transferFeeAmount();
+        long percentFee = calculatePercentFee(amount, config.transferFeePercent());
+        if (Long.MAX_VALUE - fixedFee < percentFee) {
+            return Long.MAX_VALUE;
+        }
+
+        long fee = fixedFee + percentFee;
+        if (fee > 0L && config.transferFeeMin() > fee) {
+            fee = config.transferFeeMin();
+        }
+
+        if (config.transferFeeMax() > 0L && fee > config.transferFeeMax()) {
+            fee = config.transferFeeMax();
+        }
+
+        return fee;
+    }
+
+    private static long calculatePercentFee(long amount, double percent) {
+        if (amount <= 0L || percent <= 0.0D) {
+            return 0L;
+        }
+
+        double fee = Math.floor(amount * percent / 100.0D);
+        if (fee >= Long.MAX_VALUE) {
+            return Long.MAX_VALUE;
+        }
+
+        return (long) fee;
+    }
+
+    private static UUID feeRecipientId(ServerCommandSource source, RubleState state, long feeAmount) throws CommandSyntaxException {
+        if (feeAmount <= 0L || config.transferFeeGoesToExchange()) {
+            return null;
+        }
+
+        if ("bank".equalsIgnoreCase(config.transferFeeRecipient())) {
+            if (!config.bankEnabled()) {
+                return null;
+            }
+
+            rememberBank(state);
+            return BANK_ID;
+        }
+
+        GameProfile feeRecipient = findProfile(source, config.transferFeeRecipient());
+        UUID feeRecipientId = profileId(source, feeRecipient);
+        state.rememberName(feeRecipientId, feeRecipient.getName());
+        return feeRecipientId;
+    }
+
+    private static void rememberBank(RubleState state) {
+        state.rememberName(BANK_ID, config.bankAccountName());
     }
 
     private static String message(String key, String... replacements) {

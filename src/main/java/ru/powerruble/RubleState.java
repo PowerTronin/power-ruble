@@ -116,6 +116,15 @@ public final class RubleState extends PersistentState {
             .toList();
     }
 
+    public List<BalanceEntry> topDebts(int limit) {
+        return balances.entrySet().stream()
+            .filter(entry -> entry.getValue() < 0L)
+            .sorted(Map.Entry.comparingByValue())
+            .limit(limit)
+            .map(entry -> new BalanceEntry(entry.getKey(), getName(entry.getKey()), entry.getValue()))
+            .toList();
+    }
+
     public List<String> getHistory(UUID playerId) {
         return List.copyOf(history.getOrDefault(playerId, List.of()));
     }

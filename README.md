@@ -8,11 +8,18 @@ Server-side Fabric 1.20.1 economy mod.
 - `/balance <player>` - show another player's balance, including offline players known to the server, operator-only.
 - `/pay <player> <amount>` - transfer currency to a player, including offline players known to the server.
 - `/topbalance` - show the richest balances. Can be disabled for regular players in config.
+- `/topdebt` - show the largest negative balances. Can be disabled for regular players in config.
+- `/bank balance` - show the server bank balance when bank support is enabled.
 - `/ruble help` - show mod commands.
 - `/ruble give <player> <amount>` - add rubles, including offline players known to the server, operator-only.
 - `/ruble take <player> <amount>` - remove rubles, including offline players known to the server, operator-only.
 - `/ruble set <player> <amount>` - set balance, including offline players known to the server, operator-only.
 - `/ruble history <player>` - show recent economy operations, including offline players known to the server, operator-only.
+- `/ruble debtors` - show the largest negative balances, operator-only.
+- `/ruble bank balance` - show the server bank balance, operator-only.
+- `/ruble bank give <amount>` - add money to the server bank, operator-only.
+- `/ruble bank take <amount>` - remove money from the server bank, operator-only.
+- `/ruble bank set <amount>` - set the server bank balance, operator-only.
 - `/ruble reload` - reload config, operator-only.
 
 Player transfers can move the sender down to the configured debt limit. Operator `/ruble take` can move a player below zero without a fixed debt limit.
@@ -25,27 +32,89 @@ The mod contains only server-side behavior, but its Fabric environment is set to
 
 ## Config
 
-The mod creates `config/power-ruble.properties` on first launch:
+The mod creates `config/power-ruble.json5` on first launch. JSON5 allows comments, trailing commas, and unquoted keys:
 
-```properties
-max-transfer-amount=100000
-min-transfer-amount=1
-transfer-debt-limit=-1000
-transfer-fee-amount=0
-transfer-fee-recipient=exchange
-currency-name=RUB
-top-balance-players-enabled=true
-top-balance-size=10
+```json5
+{
+  // Text appended after money amounts in chat messages.
+  currency: {
+    name: "RUB",
+  },
+
+  transfers: {
+    // Minimum and maximum amount allowed for one /pay command.
+    minAmount: 1,
+    maxAmount: 100000,
+
+    // Lowest balance a player may have after /pay.
+    debtLimit: -1000,
+
+    // Reserved for /payconfirm. 0 disables confirmation for now.
+    confirmAbove: 0,
+
+    fee: {
+      // Fixed fee charged on every /pay.
+      fixed: 0,
+
+      // Percent fee. 2.5 means 2.5%.
+      percent: 0.0,
+      min: 0,
+      max: 0,
+
+      // exchange = fee disappears, bank = server bank, any other value = player name.
+      recipient: "exchange",
+    },
+  },
+
+  top: {
+    playersEnabled: true,
+    size: 10,
+    showDebtTop: true,
+  },
+
+  bank: {
+    enabled: true,
+    accountName: "bank",
+  },
+
+  limits: {
+    // Reserved for anti-spam and anti-abuse limits. 0 disables the limit.
+    payCooldownSeconds: 0,
+    dailyTransferLimit: 0,
+  },
+
+  history: {
+    perPlayerEntries: 50,
+    globalEntries: 500,
+  },
+
+  taxes: {
+    enabled: false,
+    intervalMinutes: 1440,
+    wealthTaxPercent: 0.0,
+    minimumBalance: 0,
+  },
+}
 ```
 
-- `max-transfer-amount` - maximum amount for one `/pay`.
-- `min-transfer-amount` - minimum amount for one `/pay`.
-- `transfer-debt-limit` - minimum balance allowed after `/pay`.
-- `transfer-fee-amount` - fixed fee charged on each `/pay`.
-- `transfer-fee-recipient` - `exchange` removes the fee from circulation; any other value is treated as a player name that receives the fee.
-- `currency-name` - text shown after amounts in chat messages.
-- `top-balance-players-enabled` - whether regular players can use `/topbalance`; operators can always use it.
-- `top-balance-size` - number of entries shown by `/topbalance`.
+- `currency.name` - text shown after amounts in chat messages.
+- `transfers.minAmount` - minimum amount for one `/pay`.
+- `transfers.maxAmount` - maximum amount for one `/pay`.
+- `transfers.debtLimit` - minimum balance allowed after `/pay`.
+- `transfers.fee.fixed` - fixed fee charged on each `/pay`.
+- `transfers.fee.percent` - percent fee charged on each `/pay`; `2.5` means 2.5%.
+- `transfers.fee.min` - minimum fee when a fee is charged.
+- `transfers.fee.max` - maximum fee; `0` disables the cap.
+- `transfers.fee.recipient` - `exchange` removes the fee from circulation, `bank` sends it to the server bank, any other value is treated as a player name that receives the fee.
+- `top.playersEnabled` - whether regular players can use `/topbalance`; operators can always use it.
+- `top.size` - number of entries shown by `/topbalance`.
+- `top.showDebtTop` - whether regular players can use `/topdebt`; operators can always use it.
+- `bank.enabled` - whether `/bank balance` is available to regular players and whether fees can go to the bank.
+- `bank.accountName` - display name for the bank account.
+
+Some fields are intentionally reserved for upcoming features: `/payconfirm`, transfer limits, structured history, and taxes.
+
+If `config/power-ruble.properties` exists from an older version and `power-ruble.json5` does not, the mod reads the old file and creates a migrated JSON5 config. The old file is left in place as a backup.
 
 The mod also creates `config/power-ruble-messages.properties`; edit it to change chat messages without rebuilding the mod.
 

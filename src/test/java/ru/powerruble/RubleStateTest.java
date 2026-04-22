@@ -73,4 +73,20 @@ final class RubleStateTest {
         assertTrue(state.topBalances(10).stream().anyMatch(entry -> entry.playerId().equals(SENDER)));
         assertFalse(state.topBalances(10).stream().anyMatch(entry -> entry.playerId().equals(TARGET)));
     }
+
+    @Test
+    void topDebtsReturnsNegativeBalancesFirst() {
+        RubleState state = new RubleState();
+        state.setBalance(SENDER, -10L);
+        state.setBalance(TARGET, -50L);
+        state.setBalance(FEE_RECIPIENT, 100L);
+
+        var debts = state.topDebts(10);
+
+        assertEquals(2, debts.size());
+        assertEquals(TARGET, debts.get(0).playerId());
+        assertEquals(-50L, debts.get(0).balance());
+        assertEquals(SENDER, debts.get(1).playerId());
+        assertEquals(-10L, debts.get(1).balance());
+    }
 }
