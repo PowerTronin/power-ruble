@@ -7,14 +7,18 @@ Server-side Fabric 1.20.1 economy mod.
 - `/balance` - show your balance.
 - `/balance <player>` - show another player's balance, including offline players known to the server, operator-only.
 - `/pay <player> <amount>` - transfer currency to a player, including offline players known to the server.
+- `/payconfirm` - confirm a large pending transfer.
+- `/paycancel` - cancel a large pending transfer.
 - `/topbalance` - show the richest balances. Can be disabled for regular players in config.
 - `/topdebt` - show the largest negative balances. Can be disabled for regular players in config.
 - `/bank balance` - show the server bank balance when bank support is enabled.
 - `/ruble help` - show mod commands.
 - `/ruble give <player> <amount>` - add rubles, including offline players known to the server, operator-only.
-- `/ruble take <player> <amount>` - remove rubles, including offline players known to the server, operator-only.
+- `/ruble take <player> <amount> [reason]` - remove rubles, including offline players known to the server, operator-only.
 - `/ruble set <player> <amount>` - set balance, including offline players known to the server, operator-only.
 - `/ruble history <player>` - show recent economy operations, including offline players known to the server, operator-only.
+- `/ruble paylog <player>` - show structured operation log for a player, operator-only.
+- `/ruble paylog recent` - show recent structured economy operations, operator-only.
 - `/ruble debtors` - show the largest negative balances, operator-only.
 - `/ruble bank balance` - show the server bank balance, operator-only.
 - `/ruble bank give <amount>` - add money to the server bank, operator-only.
@@ -24,7 +28,7 @@ Server-side Fabric 1.20.1 economy mod.
 
 Player transfers can move the sender down to the configured debt limit. Operator `/ruble take` can move a player below zero without a fixed debt limit.
 
-Balances are saved in the overworld persistent state and survive server restarts, including negative balances.
+Balances and structured operation logs are saved in the overworld persistent state and survive server restarts, including negative balances.
 
 On online-mode servers, commands do not create synthetic offline UUIDs for unknown player names. The player must be known to the server profile cache. Offline-mode servers use Minecraft's standard offline UUID format.
 
@@ -49,7 +53,7 @@ The mod creates `config/power-ruble.json5` on first launch. JSON5 allows comment
     // Lowest balance a player may have after /pay.
     debtLimit: -1000,
 
-    // Reserved for /payconfirm. 0 disables confirmation for now.
+    // Transfers at or above this amount require /payconfirm. 0 disables confirmation.
     confirmAbove: 0,
 
     fee: {
@@ -78,7 +82,8 @@ The mod creates `config/power-ruble.json5` on first launch. JSON5 allows comment
   },
 
   limits: {
-    // Reserved for anti-spam and anti-abuse limits. 0 disables the limit.
+    // Anti-spam and anti-abuse limits for regular players. Operators bypass them.
+    // dailyTransferLimit is kept in memory and resets after server restart.
     payCooldownSeconds: 0,
     dailyTransferLimit: 0,
   },
@@ -101,6 +106,7 @@ The mod creates `config/power-ruble.json5` on first launch. JSON5 allows comment
 - `transfers.minAmount` - minimum amount for one `/pay`.
 - `transfers.maxAmount` - maximum amount for one `/pay`.
 - `transfers.debtLimit` - minimum balance allowed after `/pay`.
+- `transfers.confirmAbove` - transfers at or above this amount require `/payconfirm`; `0` disables confirmation.
 - `transfers.fee.fixed` - fixed fee charged on each `/pay`.
 - `transfers.fee.percent` - percent fee charged on each `/pay`; `2.5` means 2.5%.
 - `transfers.fee.min` - minimum fee when a fee is charged.
@@ -111,8 +117,12 @@ The mod creates `config/power-ruble.json5` on first launch. JSON5 allows comment
 - `top.showDebtTop` - whether regular players can use `/topdebt`; operators can always use it.
 - `bank.enabled` - whether `/bank balance` is available to regular players and whether fees can go to the bank.
 - `bank.accountName` - display name for the bank account.
+- `limits.payCooldownSeconds` - cooldown between regular player `/pay` commands; operators bypass it.
+- `limits.dailyTransferLimit` - in-memory daily transfer limit for regular players; `0` disables it, operators bypass it, and usage resets after server restart.
+- `history.perPlayerEntries` - number of entries shown by player-specific history/paylog commands.
+- `history.globalEntries` - number of entries shown by `/ruble paylog recent`.
 
-Some fields are intentionally reserved for upcoming features: `/payconfirm`, transfer limits, structured history, and taxes.
+Some fields are intentionally reserved for upcoming features: taxes.
 
 If `config/power-ruble.properties` exists from an older version and `power-ruble.json5` does not, the mod reads the old file and creates a migrated JSON5 config. The old file is left in place as a backup.
 

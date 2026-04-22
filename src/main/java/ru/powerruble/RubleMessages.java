@@ -55,15 +55,17 @@ public final class RubleMessages {
         properties.setProperty("help.header", "Команды Power Ruble:");
         properties.setProperty("help.balance", "/balance - показать свой баланс");
         properties.setProperty("help.pay", "/pay <игрок> <сумма> - перевести {currency} игроку");
+        properties.setProperty("help.payconfirm", "/payconfirm - подтвердить крупный перевод, /paycancel - отменить его");
         properties.setProperty("help.top", "/topbalance - показать топ балансов");
         properties.setProperty("help.topdebt", "/topdebt - показать топ долгов");
         properties.setProperty("help.bank", "/bank balance - показать баланс банка");
         properties.setProperty("help.self", "/ruble help - показать эту справку");
         properties.setProperty("help.admin.balance", "/balance <игрок> - показать баланс игрока");
         properties.setProperty("help.admin.give", "/ruble give <игрок> <сумма> - начислить {currency}");
-        properties.setProperty("help.admin.take", "/ruble take <игрок> <сумма> - списать {currency}");
+        properties.setProperty("help.admin.take", "/ruble take <игрок> <сумма> [причина] - списать {currency}");
         properties.setProperty("help.admin.set", "/ruble set <игрок> <сумма> - установить баланс");
         properties.setProperty("help.admin.history", "/ruble history <игрок> - показать последние операции");
+        properties.setProperty("help.admin.paylog", "/ruble paylog <игрок|recent> - показать журнал операций");
         properties.setProperty("help.admin.debtors", "/ruble debtors - показать топ долгов");
         properties.setProperty("help.admin.bank", "/ruble bank <balance|give|take|set> - управление банком");
         properties.setProperty("help.admin.reload", "/ruble reload - перезагрузить конфиг");
@@ -75,6 +77,12 @@ public final class RubleMessages {
         properties.setProperty("pay.not-enough", "Недостаточно {currency}. После перевода баланс не может быть ниже {limit}. Ваш баланс: {balance}.");
         properties.setProperty("pay.overflow", "Баланс получателя слишком большой для этого перевода.");
         properties.setProperty("pay.fee-overflow", "Баланс получателя комиссии слишком большой для этого перевода.");
+        properties.setProperty("pay.confirm-required", "Подтвердите перевод {amount} игроку {target}. Комиссия: {fee}. Выполните /payconfirm в течение {seconds} секунд или /paycancel для отмены.");
+        properties.setProperty("payconfirm.none", "Нет перевода, ожидающего подтверждения.");
+        properties.setProperty("payconfirm.expired", "Ожидающий перевод устарел. Повторите /pay.");
+        properties.setProperty("paycancel.done", "Перевод {amount} игроку {target} отменен.");
+        properties.setProperty("pay.cooldown", "Подождите {seconds} секунд перед следующим переводом.");
+        properties.setProperty("pay.daily-limit", "Превышен дневной лимит переводов. Сегодня осталось: {remaining}.");
         properties.setProperty("pay.sent", "Вы перевели {amount} игроку {target}. Комиссия: {fee}.");
         properties.setProperty("pay.received", "{sender} перевел вам {amount}.");
         properties.setProperty("admin.give.overflow", "Баланс игрока слишком большой для начисления.");
@@ -82,7 +90,9 @@ public final class RubleMessages {
         properties.setProperty("admin.give.received", "Вам начислено {amount}.");
         properties.setProperty("admin.take.too-small", "Баланс игрока слишком маленький для списания этой суммы.");
         properties.setProperty("admin.take.done", "Списано {amount} у игрока {player}. Баланс: {balance}");
+        properties.setProperty("admin.take.done.reason", "Списано {amount} у игрока {player}. Баланс: {balance}. Причина: {reason}");
         properties.setProperty("admin.take.received", "У вас списано {amount}.");
+        properties.setProperty("admin.take.received.reason", "У вас списано {amount}. Причина: {reason}");
         properties.setProperty("admin.set.done", "Баланс игрока {player} установлен: {amount}");
         properties.setProperty("admin.set.received", "Ваш баланс установлен: {amount}");
         properties.setProperty("top.disabled", "Топ балансов отключен для игроков.");
@@ -103,6 +113,11 @@ public final class RubleMessages {
         properties.setProperty("history.empty", "История операций игрока {player} пуста.");
         properties.setProperty("history.header", "История операций игрока {player}:");
         properties.setProperty("history.entry", "{entry}");
+        properties.setProperty("paylog.empty", "Журнал операций игрока {player} пуст.");
+        properties.setProperty("paylog.header", "Журнал операций игрока {player}:");
+        properties.setProperty("paylog.recent.empty", "Журнал операций пуст.");
+        properties.setProperty("paylog.recent.header", "Последние операции:");
+        properties.setProperty("paylog.entry", "{entry}");
         return properties;
     }
 

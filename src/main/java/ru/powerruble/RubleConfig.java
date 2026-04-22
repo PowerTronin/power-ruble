@@ -396,14 +396,14 @@ public final class RubleConfig {
                 // Lowest balance a player may have after /pay.
                 debtLimit: %d,
 
-                // Reserved for /payconfirm. 0 disables confirmation for now.
+                // Transfers at or above this amount require /payconfirm. 0 disables confirmation.
                 confirmAbove: %d,
 
                 fee: {
                   // Fixed fee charged on every /pay.
                   fixed: %d,
 
-                  // Reserved for percent fees. 2.5 means 2.5%%.
+                  // Percent fee. 2.5 means 2.5%%.
                   percent: %s,
                   min: %d,
                   max: %d,
@@ -425,7 +425,8 @@ public final class RubleConfig {
               },
 
               limits: {
-                // Reserved for anti-spam and anti-abuse limits. 0 disables the limit.
+                // Anti-spam and anti-abuse limits for regular players. Operators bypass them.
+                // dailyTransferLimit is kept in memory and resets after server restart.
                 payCooldownSeconds: %d,
                 dailyTransferLimit: %d,
               },

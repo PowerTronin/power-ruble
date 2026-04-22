@@ -9,6 +9,7 @@ import java.util.UUID;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
 import net.minecraft.nbt.NbtString;
+import net.minecraft.nbt.NbtElement;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.PersistentState;
 import net.minecraft.world.PersistentStateManager;
@@ -18,11 +19,13 @@ public final class RubleState extends PersistentState {
     private static final String BALANCES_KEY = "balances";
     private static final String NAMES_KEY = "names";
     private static final String HISTORY_KEY = "history";
+    private static final String TRANSACTIONS_KEY = "transactions";
     private static final int MAX_HISTORY_ENTRIES = 20;
+    private static final int MAX_GLOBAL_TRANSACTIONS = 500;
 
     private final Map<UUID, Long> balances = new HashMap<>();
     private final Map<UUID, String> names = new HashMap<>();
-    private final Map<UUID, List<String>> history = new HashMap<>();
+    private final List<RubleTransaction> transactions = new ArrayList<>();
 
     public static RubleState get(MinecraftServer server) {
         PersistentStateManager manager = server.getOverworld().getPersistentStateManager();
@@ -52,20 +55,7 @@ public final class RubleState extends PersistentState {
             }
         }
 
-        NbtCompound historyData = nbt.getCompound(HISTORY_KEY);
-        for (String key : historyData.getKeys()) {
-            try {
-                UUID uuid = UUID.fromString(key);
-                NbtList list = historyData.getList(key, NbtString.STRING_TYPE);
-                List<String> entries = new ArrayList<>();
-                for (int index = 0; index < list.size(); index++) {
-                    entries.add(list.getString(index));
-                }
-                state.history.put(uuid, entries);
-            } catch (IllegalArgumentException exception) {
-                PowerRubleMod.LOGGER.warn("Skipping invalid ruble history owner UUID '{}'", key);
-            }
-        }
+        state.readTransactions(nbt);
 
         return state;
     }
@@ -80,13 +70,9 @@ public final class RubleState extends PersistentState {
         names.forEach((uuid, name) -> nameData.putString(uuid.toString(), name));
         nbt.put(NAMES_KEY, nameData);
 
-        NbtCompound historyData = new NbtCompound();
-        history.forEach((uuid, entries) -> {
-            NbtList list = new NbtList();
-            entries.forEach(entry -> list.add(NbtString.of(entry)));
-            historyData.put(uuid.toString(), list);
-        });
-        nbt.put(HISTORY_KEY, historyData);
+        NbtList transactionData = new NbtList();
+        transactions.forEach(transaction -> transactionData.add(transaction.toNbt()));
+        nbt.put(TRANSACTIONS_KEY, transactionData);
 
         return nbt;
     }
@@ -126,15 +112,38 @@ public final class RubleState extends PersistentState {
     }
 
     public List<String> getHistory(UUID playerId) {
-        return List.copyOf(history.getOrDefault(playerId, List.of()));
+        return getTransactions(playerId, PowerRubleMod.historyPerPlayerEntries()).stream()
+            .map(transaction -> transaction.describe(PowerRubleMod.currencyName()))
+            .toList();
     }
 
     public void addHistory(UUID playerId, String entry) {
-        List<String> entries = history.computeIfAbsent(playerId, ignored -> new ArrayList<>());
-        entries.add(0, entry);
+        addTransaction(RubleTransaction.legacy(java.time.Instant.now(), playerId, getName(playerId), entry));
+    }
 
-        while (entries.size() > MAX_HISTORY_ENTRIES) {
-            entries.remove(entries.size() - 1);
+    public List<RubleTransaction> getTransactions(UUID playerId) {
+        return getTransactions(playerId, MAX_HISTORY_ENTRIES);
+    }
+
+    public List<RubleTransaction> getTransactions(UUID playerId, int limit) {
+        return transactions.stream()
+            .filter(transaction -> transaction.involves(playerId))
+            .limit(limit)
+            .toList();
+    }
+
+    public List<RubleTransaction> recentTransactions(int limit) {
+        return transactions.stream()
+            .limit(limit)
+            .toList();
+    }
+
+    public void addTransaction(RubleTransaction transaction) {
+        transactions.add(0, transaction);
+
+        int maxTransactions = Math.max(MAX_GLOBAL_TRANSACTIONS, PowerRubleMod.historyGlobalEntries());
+        while (transactions.size() > maxTransactions) {
+            transactions.remove(transactions.size() - 1);
         }
 
         markDirty();
@@ -185,32 +194,69 @@ public final class RubleState extends PersistentState {
         }
 
         long totalCost = amount + fee;
-        long senderBalance = getBalance(senderId);
-        if (debtLimit > Long.MAX_VALUE - totalCost) {
-            return TransferResult.NOT_ENOUGH_MONEY;
+        Map<UUID, Long> deltas = new HashMap<>();
+        TransferResult deltaResult = addDelta(deltas, senderId, -totalCost, TransferResult.NOT_ENOUGH_MONEY);
+        if (deltaResult != TransferResult.OK) {
+            return deltaResult;
         }
 
-        if (senderBalance < debtLimit + totalCost) {
-            return TransferResult.NOT_ENOUGH_MONEY;
+        deltaResult = addDelta(deltas, targetId, amount, TransferResult.OVERFLOW);
+        if (deltaResult != TransferResult.OK) {
+            return deltaResult;
         }
 
-        long targetBalance = getBalance(targetId);
-        if (Long.MAX_VALUE - targetBalance < amount) {
-            return TransferResult.OVERFLOW;
-        }
-
-        if (feeRecipientId != null) {
-            long feeRecipientBalance = getBalance(feeRecipientId);
-            if (Long.MAX_VALUE - feeRecipientBalance < fee) {
-                return TransferResult.FEE_OVERFLOW;
+        if (feeRecipientId != null && fee > 0L) {
+            deltaResult = addDelta(deltas, feeRecipientId, fee, TransferResult.FEE_OVERFLOW);
+            if (deltaResult != TransferResult.OK) {
+                return deltaResult;
             }
         }
 
-        setBalance(senderId, senderBalance - totalCost);
-        setBalance(targetId, targetBalance + amount);
-        if (feeRecipientId != null && fee > 0L) {
-            setBalance(feeRecipientId, getBalance(feeRecipientId) + fee);
+        Map<UUID, Long> nextBalances = new HashMap<>();
+        for (Map.Entry<UUID, Long> entry : deltas.entrySet()) {
+            UUID playerId = entry.getKey();
+            long currentBalance = getBalance(playerId);
+            long delta = entry.getValue();
+            TransferResult result = validateBalanceChange(playerId, currentBalance, delta, feeRecipientId);
+            if (result != TransferResult.OK) {
+                return result;
+            }
+
+            long nextBalance = currentBalance + delta;
+            if (playerId.equals(senderId) && nextBalance < debtLimit) {
+                return TransferResult.NOT_ENOUGH_MONEY;
+            }
+
+            nextBalances.put(playerId, nextBalance);
         }
+
+        nextBalances.forEach(this::setBalance);
+        return TransferResult.OK;
+    }
+
+    private static TransferResult addDelta(Map<UUID, Long> deltas, UUID playerId, long delta, TransferResult overflowResult) {
+        long currentDelta = deltas.getOrDefault(playerId, 0L);
+        if (delta > 0L && currentDelta > Long.MAX_VALUE - delta) {
+            return overflowResult;
+        }
+
+        if (delta < 0L && currentDelta < Long.MIN_VALUE - delta) {
+            return TransferResult.NOT_ENOUGH_MONEY;
+        }
+
+        deltas.put(playerId, currentDelta + delta);
+        return TransferResult.OK;
+    }
+
+    private static TransferResult validateBalanceChange(UUID playerId, long currentBalance, long delta, UUID feeRecipientId) {
+        if (delta > 0L && currentBalance > Long.MAX_VALUE - delta) {
+            return playerId.equals(feeRecipientId) ? TransferResult.FEE_OVERFLOW : TransferResult.OVERFLOW;
+        }
+
+        if (delta < 0L && currentBalance < Long.MIN_VALUE - delta) {
+            return TransferResult.NOT_ENOUGH_MONEY;
+        }
+
         return TransferResult.OK;
     }
 
@@ -222,5 +268,28 @@ public final class RubleState extends PersistentState {
         NOT_ENOUGH_MONEY,
         OVERFLOW,
         FEE_OVERFLOW
+    }
+
+    private void readTransactions(NbtCompound nbt) {
+        if (nbt.contains(TRANSACTIONS_KEY, NbtElement.LIST_TYPE)) {
+            NbtList transactionData = nbt.getList(TRANSACTIONS_KEY, NbtElement.COMPOUND_TYPE);
+            for (int index = 0; index < transactionData.size(); index++) {
+                transactions.add(RubleTransaction.fromNbt(transactionData.getCompound(index)));
+            }
+            return;
+        }
+
+        NbtCompound historyData = nbt.getCompound(HISTORY_KEY);
+        for (String key : historyData.getKeys()) {
+            try {
+                UUID uuid = UUID.fromString(key);
+                NbtList list = historyData.getList(key, NbtString.STRING_TYPE);
+                for (int index = 0; index < list.size(); index++) {
+                    transactions.add(RubleTransaction.legacy(java.time.Instant.EPOCH, uuid, getName(uuid), list.getString(index)));
+                }
+            } catch (IllegalArgumentException exception) {
+                PowerRubleMod.LOGGER.warn("Skipping invalid ruble history owner UUID '{}'", key);
+            }
+        }
     }
 }
