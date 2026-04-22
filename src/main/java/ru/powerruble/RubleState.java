@@ -9,8 +9,6 @@ import net.minecraft.world.PersistentState;
 import net.minecraft.world.PersistentStateManager;
 
 public final class RubleState extends PersistentState {
-    public static final long TRANSFER_DEBT_LIMIT = -1000L;
-
     private static final String STATE_KEY = PowerRubleMod.MOD_ID;
     private static final String BALANCES_KEY = "balances";
 
@@ -88,9 +86,13 @@ public final class RubleState extends PersistentState {
         return true;
     }
 
-    public TransferResult transfer(UUID senderId, UUID targetId, long amount) {
+    public TransferResult transfer(UUID senderId, UUID targetId, long amount, long debtLimit) {
         long senderBalance = getBalance(senderId);
-        if (senderBalance < TRANSFER_DEBT_LIMIT + amount) {
+        if (debtLimit > Long.MAX_VALUE - amount) {
+            return TransferResult.NOT_ENOUGH_MONEY;
+        }
+
+        if (senderBalance < debtLimit + amount) {
             return TransferResult.NOT_ENOUGH_MONEY;
         }
 

@@ -15,11 +15,15 @@ public final class PowerRubleMod implements ModInitializer {
     public static final String MOD_ID = "power-ruble";
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
+    private static RubleConfig config;
+
     @Override
     public void onInitialize() {
-        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> dispatcher.register(
-            CommandManager.literal("ruble")
-                .then(CommandManager.literal("balance")
+        config = RubleConfig.load();
+
+        CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
+            dispatcher.register(
+                CommandManager.literal("balance")
                     .executes(context -> showOwnBalance(context.getSource()))
                     .then(CommandManager.argument("player", EntityArgumentType.player())
                         .requires(source -> source.hasPermissionLevel(2))
@@ -28,8 +32,10 @@ public final class PowerRubleMod implements ModInitializer {
                             EntityArgumentType.getPlayer(context, "player")
                         ))
                     )
-                )
-                .then(CommandManager.literal("pay")
+            );
+
+            dispatcher.register(
+                CommandManager.literal("pay")
                     .then(CommandManager.argument("player", EntityArgumentType.player())
                         .then(CommandManager.argument("amount", LongArgumentType.longArg(1))
                             .executes(context -> pay(
@@ -39,46 +45,57 @@ public final class PowerRubleMod implements ModInitializer {
                             ))
                         )
                     )
-                )
-                .then(CommandManager.literal("give")
+            );
+
+            dispatcher.register(
+                CommandManager.literal("ruble")
                     .requires(source -> source.hasPermissionLevel(2))
-                    .then(CommandManager.argument("player", EntityArgumentType.player())
-                        .then(CommandManager.argument("amount", LongArgumentType.longArg(1))
-                            .executes(context -> give(
-                                context.getSource(),
-                                EntityArgumentType.getPlayer(context, "player"),
-                                LongArgumentType.getLong(context, "amount")
-                            ))
+                    .then(CommandManager.literal("reload")
+                        .executes(context -> reloadConfig(context.getSource()))
+                    )
+                    .then(CommandManager.literal("give")
+                        .then(CommandManager.argument("player", EntityArgumentType.player())
+                            .then(CommandManager.argument("amount", LongArgumentType.longArg(1))
+                                .executes(context -> give(
+                                    context.getSource(),
+                                    EntityArgumentType.getPlayer(context, "player"),
+                                    LongArgumentType.getLong(context, "amount")
+                                ))
+                            )
                         )
                     )
-                )
-                .then(CommandManager.literal("take")
-                    .requires(source -> source.hasPermissionLevel(2))
-                    .then(CommandManager.argument("player", EntityArgumentType.player())
-                        .then(CommandManager.argument("amount", LongArgumentType.longArg(1))
-                            .executes(context -> take(
-                                context.getSource(),
-                                EntityArgumentType.getPlayer(context, "player"),
-                                LongArgumentType.getLong(context, "amount")
-                            ))
+                    .then(CommandManager.literal("take")
+                        .then(CommandManager.argument("player", EntityArgumentType.player())
+                            .then(CommandManager.argument("amount", LongArgumentType.longArg(1))
+                                .executes(context -> take(
+                                    context.getSource(),
+                                    EntityArgumentType.getPlayer(context, "player"),
+                                    LongArgumentType.getLong(context, "amount")
+                                ))
+                            )
                         )
                     )
-                )
-                .then(CommandManager.literal("set")
-                    .requires(source -> source.hasPermissionLevel(2))
-                    .then(CommandManager.argument("player", EntityArgumentType.player())
-                        .then(CommandManager.argument("amount", LongArgumentType.longArg(0))
-                            .executes(context -> set(
-                                context.getSource(),
-                                EntityArgumentType.getPlayer(context, "player"),
-                                LongArgumentType.getLong(context, "amount")
-                            ))
+                    .then(CommandManager.literal("set")
+                        .then(CommandManager.argument("player", EntityArgumentType.player())
+                            .then(CommandManager.argument("amount", LongArgumentType.longArg(0))
+                                .executes(context -> set(
+                                    context.getSource(),
+                                    EntityArgumentType.getPlayer(context, "player"),
+                                    LongArgumentType.getLong(context, "amount")
+                                ))
+                            )
                         )
                     )
-                )
-        ));
+            );
+        });
 
         LOGGER.info("Power Ruble economy commands registered");
+    }
+
+    private static int reloadConfig(ServerCommandSource source) {
+        config = RubleConfig.load();
+        sendMessage(source, "Конфиг Power Ruble перезагружен.");
+        return 1;
     }
 
     private static int showOwnBalance(ServerCommandSource source) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
@@ -94,16 +111,21 @@ public final class PowerRubleMod implements ModInitializer {
     private static int pay(ServerCommandSource source, ServerPlayerEntity target, long amount) throws com.mojang.brigadier.exceptions.CommandSyntaxException {
         ServerPlayerEntity sender = source.getPlayerOrThrow();
 
+        if (amount > config.maxTransferAmount()) {
+            source.sendError(Text.literal("Сумма перевода не может быть больше " + format(config.maxTransferAmount()) + "."));
+            return 0;
+        }
+
         if (sender.getUuid().equals(target.getUuid())) {
-            source.sendError(Text.literal("Нельзя перевести рубли самому себе."));
+            source.sendError(Text.literal("Нельзя перевести " + config.currencyName() + " самому себе."));
             return 0;
         }
 
         RubleState state = RubleState.get(source.getServer());
-        RubleState.TransferResult result = state.transfer(sender.getUuid(), target.getUuid(), amount);
+        RubleState.TransferResult result = state.transfer(sender.getUuid(), target.getUuid(), amount, config.transferDebtLimit());
 
         if (result == RubleState.TransferResult.NOT_ENOUGH_MONEY) {
-            source.sendError(Text.literal("Недостаточно рублей. После перевода баланс не может быть ниже " + format(RubleState.TRANSFER_DEBT_LIMIT) + ". Ваш баланс: " + format(state.getBalance(sender.getUuid()))));
+            source.sendError(Text.literal("Недостаточно " + config.currencyName() + ". После перевода баланс не может быть ниже " + format(config.transferDebtLimit()) + ". Ваш баланс: " + format(state.getBalance(sender.getUuid()))));
             return 0;
         }
 
@@ -165,6 +187,6 @@ public final class PowerRubleMod implements ModInitializer {
     }
 
     private static String format(long amount) {
-        return amount + " RUB";
+        return amount + " " + config.currencyName();
     }
 }

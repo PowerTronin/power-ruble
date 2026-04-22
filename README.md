@@ -4,16 +4,33 @@ Server-side Fabric 1.20.1 economy mod.
 
 ## Commands
 
-- `/ruble balance` - show your balance.
-- `/ruble balance <player>` - show another player's balance, operator-only.
-- `/ruble pay <player> <amount>` - transfer rubles to an online player.
+- `/balance` - show your balance.
+- `/balance <player>` - show another player's balance, operator-only.
+- `/pay <player> <amount>` - transfer currency to an online player.
 - `/ruble give <player> <amount>` - add rubles, operator-only.
 - `/ruble take <player> <amount>` - remove rubles, operator-only.
 - `/ruble set <player> <amount>` - set balance, operator-only.
+- `/ruble reload` - reload config, operator-only.
 
-Player transfers can move the sender down to `-1000 RUB`. Operator `/ruble take` can move a player below zero without a fixed debt limit.
+Player transfers can move the sender down to the configured debt limit. Operator `/ruble take` can move a player below zero without a fixed debt limit.
 
 Balances are saved in the overworld persistent state and survive server restarts, including negative balances.
+
+## Config
+
+The mod creates `config/power-ruble.properties` on first launch:
+
+```properties
+max-transfer-amount=100000
+transfer-debt-limit=-1000
+currency-name=RUB
+```
+
+- `max-transfer-amount` - maximum amount for one `/pay`.
+- `transfer-debt-limit` - minimum balance allowed after `/pay`.
+- `currency-name` - text shown after amounts in chat messages.
+
+After editing the config, restart the server or run `/ruble reload`.
 
 ## Build
 
