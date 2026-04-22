@@ -7,6 +7,7 @@ Server-side Fabric 1.20.1 economy mod.
 - `/balance` - show your balance.
 - `/balance <player>` - show another player's balance, operator-only.
 - `/pay <player> <amount>` - transfer currency to an online player.
+- `/ruble help` - show mod commands.
 - `/ruble give <player> <amount>` - add rubles, operator-only.
 - `/ruble take <player> <amount>` - remove rubles, operator-only.
 - `/ruble set <player> <amount>` - set balance, operator-only.

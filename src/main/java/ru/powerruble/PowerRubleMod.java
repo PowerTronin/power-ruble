@@ -49,11 +49,15 @@ public final class PowerRubleMod implements ModInitializer {
 
             dispatcher.register(
                 CommandManager.literal("ruble")
-                    .requires(source -> source.hasPermissionLevel(2))
+                    .then(CommandManager.literal("help")
+                        .executes(context -> showHelp(context.getSource()))
+                    )
                     .then(CommandManager.literal("reload")
+                        .requires(source -> source.hasPermissionLevel(2))
                         .executes(context -> reloadConfig(context.getSource()))
                     )
                     .then(CommandManager.literal("give")
+                        .requires(source -> source.hasPermissionLevel(2))
                         .then(CommandManager.argument("player", EntityArgumentType.player())
                             .then(CommandManager.argument("amount", LongArgumentType.longArg(1))
                                 .executes(context -> give(
@@ -65,6 +69,7 @@ public final class PowerRubleMod implements ModInitializer {
                         )
                     )
                     .then(CommandManager.literal("take")
+                        .requires(source -> source.hasPermissionLevel(2))
                         .then(CommandManager.argument("player", EntityArgumentType.player())
                             .then(CommandManager.argument("amount", LongArgumentType.longArg(1))
                                 .executes(context -> take(
@@ -76,6 +81,7 @@ public final class PowerRubleMod implements ModInitializer {
                         )
                     )
                     .then(CommandManager.literal("set")
+                        .requires(source -> source.hasPermissionLevel(2))
                         .then(CommandManager.argument("player", EntityArgumentType.player())
                             .then(CommandManager.argument("amount", LongArgumentType.longArg(0))
                                 .executes(context -> set(
@@ -90,6 +96,23 @@ public final class PowerRubleMod implements ModInitializer {
         });
 
         LOGGER.info("Power Ruble economy commands registered");
+    }
+
+    private static int showHelp(ServerCommandSource source) {
+        sendMessage(source, "Команды Power Ruble:");
+        sendMessage(source, "/balance - показать свой баланс");
+        sendMessage(source, "/pay <игрок> <сумма> - перевести " + config.currencyName() + " игроку");
+        sendMessage(source, "/ruble help - показать эту справку");
+
+        if (source.hasPermissionLevel(2)) {
+            sendMessage(source, "/balance <игрок> - показать баланс игрока");
+            sendMessage(source, "/ruble give <игрок> <сумма> - начислить " + config.currencyName());
+            sendMessage(source, "/ruble take <игрок> <сумма> - списать " + config.currencyName());
+            sendMessage(source, "/ruble set <игрок> <сумма> - установить баланс");
+            sendMessage(source, "/ruble reload - перезагрузить конфиг");
+        }
+
+        return 1;
     }
 
     private static int reloadConfig(ServerCommandSource source) {
