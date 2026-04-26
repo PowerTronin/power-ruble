@@ -12,6 +12,7 @@ Server-side Fabric 1.20.1 economy mod.
 - `/topbalance` - show the richest balances. Can be disabled for regular players in config.
 - `/topdebt` - show the largest negative balances. Can be disabled for regular players in config.
 - `/bank balance` - show the server bank balance when bank support is enabled.
+- `/bank deposit <amount> [comment]` - transfer money from your balance to the server bank.
 - `/ruble help` - show mod commands.
 - `/ruble give <player> <amount>` - add rubles, including offline players known to the server, operator-only.
 - `/ruble take <player> <amount> [reason]` - remove rubles, including offline players known to the server, operator-only.
@@ -24,6 +25,7 @@ Server-side Fabric 1.20.1 economy mod.
 - `/ruble bank give <amount>` - add money to the server bank, operator-only.
 - `/ruble bank take <amount>` - remove money from the server bank, operator-only.
 - `/ruble bank set <amount>` - set the server bank balance, operator-only.
+- `/ruble bank pay <player> <amount> [comment]` - transfer money from the server bank to a player, operator-only.
 - `/ruble reload` - reload config, operator-only.
 
 Player transfers can move the sender down to the configured debt limit. Operator `/ruble take` can move a player below zero without a fixed debt limit.

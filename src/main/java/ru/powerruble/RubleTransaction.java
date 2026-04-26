@@ -67,7 +67,8 @@ public record RubleTransaction(
         long amount,
         long fee,
         Optional<UUID> feeRecipientId,
-        String feeRecipientName
+        String feeRecipientName,
+        String reason
     ) {
         return new RubleTransaction(
             UUID.randomUUID().toString(),
@@ -83,7 +84,7 @@ public record RubleTransaction(
             fee,
             feeRecipientId,
             feeRecipientName,
-            "",
+            reason,
             ""
         );
     }
@@ -193,7 +194,7 @@ public record RubleTransaction(
         String feeText = fee + " " + currencyName;
         String feeSuffix = feeRecipientName.isBlank() ? ", fee " + feeText : ", fee " + feeText + " -> " + feeRecipientName;
         return switch (type) {
-            case TRANSFER -> time + " transfer " + fromName + " -> " + toName + ": " + amountText + feeSuffix;
+            case TRANSFER -> time + " transfer " + fromName + " -> " + toName + ": " + amountText + feeSuffix + reasonSuffix();
             case ADMIN_GIVE -> time + " admin give -> " + toName + ": +" + amountText;
             case ADMIN_TAKE -> time + " admin take -> " + toName + ": -" + amountText + reasonSuffix();
             case ADMIN_SET -> time + " admin set -> " + toName + ": =" + amountText;

@@ -148,7 +148,8 @@ final class RubleStateTest {
             25L,
             3L,
             Optional.of(FEE_RECIPIENT),
-            "bank"
+            "bank",
+            ""
         ));
 
         RubleState loaded = RubleState.fromNbt(state.writeNbt(new NbtCompound()));
@@ -176,5 +177,24 @@ final class RubleStateTest {
 
         assertEquals("штраф", transaction.reason());
         assertTrue(transaction.describe("RUB").contains("reason: штраф"));
+    }
+
+    @Test
+    void transferTransactionKeepsComment() {
+        RubleTransaction transaction = RubleTransaction.transfer(
+            Instant.parse("2026-04-22T00:00:00Z"),
+            SENDER,
+            "sender",
+            TARGET,
+            "target",
+            15L,
+            0L,
+            Optional.empty(),
+            "",
+            "за товар"
+        );
+
+        assertEquals("за товар", transaction.reason());
+        assertTrue(transaction.describe("RUB").contains("reason: за товар"));
     }
 }

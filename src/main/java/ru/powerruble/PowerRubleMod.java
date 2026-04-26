@@ -70,10 +70,18 @@ public final class PowerRubleMod implements ModInitializer {
                             .executes(context -> pay(
                                 context.getSource(),
                                 singleProfile(GameProfileArgumentType.getProfileArgument(context, "player")),
-                                LongArgumentType.getLong(context, "amount")
+                                LongArgumentType.getLong(context, "amount"),
+                                ""
+                            ))
+                            .then(CommandManager.argument("comment", StringArgumentType.greedyString())
+                                .executes(context -> pay(
+                                    context.getSource(),
+                                    singleProfile(GameProfileArgumentType.getProfileArgument(context, "player")),
+                                    LongArgumentType.getLong(context, "amount"),
+                                    StringArgumentType.getString(context, "comment")
+                                ))
                             ))
                         )
-                    )
             );
 
             dispatcher.register(
@@ -100,6 +108,22 @@ public final class PowerRubleMod implements ModInitializer {
                 CommandManager.literal("bank")
                     .then(CommandManager.literal("balance")
                         .executes(context -> showBankBalance(context.getSource()))
+                    )
+                    .then(CommandManager.literal("deposit")
+                        .then(CommandManager.argument("amount", LongArgumentType.longArg(1))
+                            .executes(context -> depositToBank(
+                                context.getSource(),
+                                LongArgumentType.getLong(context, "amount"),
+                                ""
+                            ))
+                            .then(CommandManager.argument("comment", StringArgumentType.greedyString())
+                                .executes(context -> depositToBank(
+                                    context.getSource(),
+                                    LongArgumentType.getLong(context, "amount"),
+                                    StringArgumentType.getString(context, "comment")
+                                ))
+                            )
+                        )
                     )
             );
 
@@ -164,6 +188,26 @@ public final class PowerRubleMod implements ModInitializer {
                                     context.getSource(),
                                     LongArgumentType.getLong(context, "amount")
                                 ))
+                            )
+                        )
+                        .then(CommandManager.literal("pay")
+                            .then(CommandManager.argument("player", GameProfileArgumentType.gameProfile())
+                                .then(CommandManager.argument("amount", LongArgumentType.longArg(1))
+                                    .executes(context -> payFromBank(
+                                        context.getSource(),
+                                        singleProfile(GameProfileArgumentType.getProfileArgument(context, "player")),
+                                        LongArgumentType.getLong(context, "amount"),
+                                        ""
+                                    ))
+                                    .then(CommandManager.argument("comment", StringArgumentType.greedyString())
+                                        .executes(context -> payFromBank(
+                                            context.getSource(),
+                                            singleProfile(GameProfileArgumentType.getProfileArgument(context, "player")),
+                                            LongArgumentType.getLong(context, "amount"),
+                                            StringArgumentType.getString(context, "comment")
+                                        ))
+                                    )
+                                )
                             )
                         )
                     )
@@ -285,8 +329,9 @@ public final class PowerRubleMod implements ModInitializer {
         return 1;
     }
 
-    private static int pay(ServerCommandSource source, GameProfile targetProfile, long amount) throws CommandSyntaxException {
+    private static int pay(ServerCommandSource source, GameProfile targetProfile, long amount, String comment) throws CommandSyntaxException {
         ServerPlayerEntity sender = source.getPlayerOrThrow();
+        String normalizedComment = normalizeReason(comment);
 
         if (amount < config.minTransferAmount()) {
             source.sendError(Text.literal(message("pay.min", "amount", format(config.minTransferAmount()))));
@@ -317,19 +362,21 @@ public final class PowerRubleMod implements ModInitializer {
                 targetName,
                 amount,
                 feeAmount,
+                normalizedComment,
                 Instant.now().plus(PENDING_TRANSFER_TTL)
             ));
             sendMessage(source, message(
-                "pay.confirm-required",
+                normalizedComment.isBlank() ? "pay.confirm-required" : "pay.confirm-required.comment",
                 "amount", format(amount),
                 "target", targetName,
                 "fee", format(feeAmount),
-                "seconds", Long.toString(PENDING_TRANSFER_TTL.toSeconds())
+                "seconds", Long.toString(PENDING_TRANSFER_TTL.toSeconds()),
+                "comment", normalizedComment
             ));
             return 1;
         }
 
-        return executePay(source, sender, targetId, targetName, amount, feeAmount);
+        return executePay(source, sender, targetId, targetName, amount, feeAmount, normalizedComment);
     }
 
     private static int confirmPay(ServerCommandSource source) throws CommandSyntaxException {
@@ -345,7 +392,7 @@ public final class PowerRubleMod implements ModInitializer {
             return 0;
         }
 
-        return executePay(source, sender, pending.targetId(), pending.targetName(), pending.amount(), pending.fee());
+        return executePay(source, sender, pending.targetId(), pending.targetName(), pending.amount(), pending.fee(), pending.comment());
     }
 
     private static int cancelPay(ServerCommandSource source) throws CommandSyntaxException {
@@ -366,7 +413,8 @@ public final class PowerRubleMod implements ModInitializer {
         UUID targetId,
         String targetName,
         long amount,
-        long feeAmount
+        long feeAmount,
+        String comment
     ) throws CommandSyntaxException {
         RubleState state = RubleState.get(source.getServer());
         state.rememberName(sender.getUuid(), playerName(sender));
@@ -410,10 +458,21 @@ public final class PowerRubleMod implements ModInitializer {
         recordSuccessfulPay(sender.getUuid(), amount, now);
 
         String fee = format(feeAmount);
-        sendMessage(source, message("pay.sent", "amount", format(amount), "target", targetName, "fee", fee));
+        sendMessage(source, message(
+            comment.isBlank() ? "pay.sent" : "pay.sent.comment",
+            "amount", format(amount),
+            "target", targetName,
+            "fee", fee,
+            "comment", comment
+        ));
         ServerPlayerEntity onlineTarget = source.getServer().getPlayerManager().getPlayer(targetId);
         if (onlineTarget != null) {
-            onlineTarget.sendMessage(Text.literal(message("pay.received", "sender", playerName(sender), "amount", format(amount))), false);
+            onlineTarget.sendMessage(Text.literal(message(
+                comment.isBlank() ? "pay.received" : "pay.received.comment",
+                "sender", playerName(sender),
+                "amount", format(amount),
+                "comment", comment
+            )), false);
         }
 
         state.addTransaction(RubleTransaction.transfer(
@@ -425,7 +484,8 @@ public final class PowerRubleMod implements ModInitializer {
             amount,
             feeAmount,
             Optional.ofNullable(feeRecipientId),
-            feeRecipientName(state, feeRecipientId)
+            feeRecipientName(state, feeRecipientId),
+            comment
         ));
 
         return 1;
@@ -626,6 +686,50 @@ public final class PowerRubleMod implements ModInitializer {
         return 1;
     }
 
+    private static int depositToBank(ServerCommandSource source, long amount, String comment) throws CommandSyntaxException {
+        if (!config.bankEnabled()) {
+            source.sendError(Text.literal(message("bank.disabled")));
+            return 0;
+        }
+
+        ServerPlayerEntity sender = source.getPlayerOrThrow();
+        RubleState state = RubleState.get(source.getServer());
+        rememberBank(state);
+        state.rememberName(sender.getUuid(), playerName(sender));
+        String normalizedComment = normalizeReason(comment);
+
+        RubleState.TransferResult result = state.transfer(sender.getUuid(), BANK_ID, null, amount, 0L, 0L);
+        if (result == RubleState.TransferResult.NOT_ENOUGH_MONEY) {
+            source.sendError(Text.literal(message("bank.deposit.not-enough")));
+            return 0;
+        }
+
+        if (result == RubleState.TransferResult.OVERFLOW) {
+            source.sendError(Text.literal(message("bank.overflow")));
+            return 0;
+        }
+
+        sendMessage(source, message(
+            normalizedComment.isBlank() ? "bank.deposit.done" : "bank.deposit.done.comment",
+            "amount", format(amount),
+            "balance", format(state.getBalance(BANK_ID)),
+            "comment", normalizedComment
+        ));
+        state.addTransaction(RubleTransaction.transfer(
+            Instant.now(),
+            sender.getUuid(),
+            playerName(sender),
+            BANK_ID,
+            config.bankAccountName(),
+            amount,
+            0L,
+            Optional.empty(),
+            "",
+            normalizedComment
+        ));
+        return 1;
+    }
+
     private static int takeBank(ServerCommandSource source, long amount) {
         RubleState state = RubleState.get(source.getServer());
         rememberBank(state);
@@ -636,6 +740,55 @@ public final class PowerRubleMod implements ModInitializer {
 
         sendMessage(source, message("bank.take.done", "amount", format(amount), "balance", format(state.getBalance(BANK_ID))));
         state.addTransaction(RubleTransaction.bank(RubleTransaction.Type.BANK_TAKE, Instant.now(), BANK_ID, config.bankAccountName(), amount, "bank take"));
+        return 1;
+    }
+
+    private static int payFromBank(ServerCommandSource source, GameProfile profile, long amount, String comment) throws CommandSyntaxException {
+        UUID targetId = profileId(source, profile);
+        String targetName = profile.getName();
+        RubleState state = RubleState.get(source.getServer());
+        rememberBank(state);
+        state.rememberName(targetId, targetName);
+        String normalizedComment = normalizeReason(comment);
+
+        RubleState.TransferResult result = state.transfer(BANK_ID, targetId, null, amount, 0L, 0L);
+        if (result == RubleState.TransferResult.NOT_ENOUGH_MONEY) {
+            source.sendError(Text.literal(message("bank.not-enough")));
+            return 0;
+        }
+
+        if (result == RubleState.TransferResult.OVERFLOW) {
+            source.sendError(Text.literal(message("pay.overflow")));
+            return 0;
+        }
+
+        sendMessage(source, message(
+            normalizedComment.isBlank() ? "bank.pay.done" : "bank.pay.done.comment",
+            "amount", format(amount),
+            "target", targetName,
+            "balance", format(state.getBalance(BANK_ID)),
+            "comment", normalizedComment
+        ));
+        ServerPlayerEntity onlineTarget = source.getServer().getPlayerManager().getPlayer(targetId);
+        if (onlineTarget != null) {
+            onlineTarget.sendMessage(Text.literal(message(
+                normalizedComment.isBlank() ? "bank.pay.received" : "bank.pay.received.comment",
+                "amount", format(amount),
+                "comment", normalizedComment
+            )), false);
+        }
+        state.addTransaction(RubleTransaction.transfer(
+            Instant.now(),
+            BANK_ID,
+            config.bankAccountName(),
+            targetId,
+            targetName,
+            amount,
+            0L,
+            Optional.empty(),
+            "",
+            normalizedComment
+        ));
         return 1;
     }
 
@@ -861,7 +1014,7 @@ public final class PowerRubleMod implements ModInitializer {
         return amount + " " + config.currencyName();
     }
 
-    private record PendingTransfer(UUID targetId, String targetName, long amount, long fee, Instant expiresAt) {
+    private record PendingTransfer(UUID targetId, String targetName, long amount, long fee, String comment, Instant expiresAt) {
     }
 
     private record DailyTransferUsage(LocalDate date, long amount) {
