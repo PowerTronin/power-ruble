@@ -18,11 +18,14 @@ import java.util.Optional;
 import java.util.UUID;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
+import net.minecraft.command.argument.EntityArgumentType;
 import net.minecraft.command.argument.GameProfileArgumentType;
+import net.minecraft.item.ItemStack;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
+import net.minecraft.util.Hand;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -42,6 +45,7 @@ public final class PowerRubleMod implements ModInitializer {
     private static RubleConfig config;
     private static RubleMessages messages;
     private static final Map<UUID, PendingTransfer> pendingTransfers = new HashMap<>();
+    private static final Map<UUID, PendingSale> pendingSales = new HashMap<>();
     private static final Map<UUID, Instant> lastPayTimes = new HashMap<>();
     private static final Map<UUID, DailyTransferUsage> dailyTransferUsage = new HashMap<>();
 
@@ -92,6 +96,38 @@ public final class PowerRubleMod implements ModInitializer {
             dispatcher.register(
                 CommandManager.literal("paycancel")
                     .executes(context -> cancelPay(context.getSource()))
+            );
+
+            dispatcher.register(
+                CommandManager.literal("sell")
+                    .then(CommandManager.argument("player", EntityArgumentType.player())
+                        .then(CommandManager.argument("amount", LongArgumentType.longArg(1))
+                            .executes(context -> sell(
+                                context.getSource(),
+                                EntityArgumentType.getPlayer(context, "player"),
+                                LongArgumentType.getLong(context, "amount"),
+                                ""
+                            ))
+                            .then(CommandManager.argument("comment", StringArgumentType.greedyString())
+                                .executes(context -> sell(
+                                    context.getSource(),
+                                    EntityArgumentType.getPlayer(context, "player"),
+                                    LongArgumentType.getLong(context, "amount"),
+                                    StringArgumentType.getString(context, "comment")
+                                ))
+                            )
+                        )
+                    )
+            );
+
+            dispatcher.register(
+                CommandManager.literal("buyconfirm")
+                    .executes(context -> confirmBuy(context.getSource()))
+            );
+
+            dispatcher.register(
+                CommandManager.literal("buycancel")
+                    .executes(context -> cancelBuy(context.getSource()))
             );
 
             dispatcher.register(
@@ -267,6 +303,7 @@ public final class PowerRubleMod implements ModInitializer {
         sendMessage(source, message("help.balance"));
         sendMessage(source, message("help.pay"));
         sendMessage(source, message("help.payconfirm"));
+        sendMessage(source, message("help.sell"));
         if (config.topBalancePlayersEnabled() || source.hasPermissionLevel(2)) {
             sendMessage(source, message("help.top"));
         }
@@ -297,6 +334,7 @@ public final class PowerRubleMod implements ModInitializer {
         config = RubleConfig.load();
         messages = RubleMessages.load();
         pendingTransfers.clear();
+        pendingSales.clear();
         sendMessage(source, message("config.reloaded"));
         return 1;
     }
@@ -404,6 +442,181 @@ public final class PowerRubleMod implements ModInitializer {
         }
 
         sendMessage(source, message("paycancel.done", "amount", format(pending.amount()), "target", pending.targetName()));
+        return 1;
+    }
+
+    private static int sell(ServerCommandSource source, ServerPlayerEntity buyer, long amount, String comment) throws CommandSyntaxException {
+        ServerPlayerEntity seller = source.getPlayerOrThrow();
+        String normalizedComment = normalizeReason(comment);
+
+        if (seller.getUuid().equals(buyer.getUuid())) {
+            source.sendError(Text.literal(message("sale.self")));
+            return 0;
+        }
+
+        if (amount < config.minTransferAmount()) {
+            source.sendError(Text.literal(message("pay.min", "amount", format(config.minTransferAmount()))));
+            return 0;
+        }
+
+        if (amount > config.maxTransferAmount()) {
+            source.sendError(Text.literal(message("pay.max", "amount", format(config.maxTransferAmount()))));
+            return 0;
+        }
+
+        ItemStack handStack = seller.getMainHandStack();
+        if (handStack.isEmpty()) {
+            source.sendError(Text.literal(message("sale.empty-hand")));
+            return 0;
+        }
+
+        pendingSales.put(buyer.getUuid(), new PendingSale(
+            seller.getUuid(),
+            playerName(seller),
+            buyer.getUuid(),
+            playerName(buyer),
+            amount,
+            handStack.copy(),
+            normalizedComment,
+            Instant.now().plus(PENDING_TRANSFER_TTL)
+        ));
+
+        sendMessage(source, message(
+            normalizedComment.isBlank() ? "sale.offer.sent" : "sale.offer.sent.comment",
+            "amount", format(amount),
+            "target", playerName(buyer),
+            "item", itemLabel(handStack),
+            "comment", normalizedComment
+        ));
+        buyer.sendMessage(Text.literal(message(
+            normalizedComment.isBlank() ? "sale.offer.received" : "sale.offer.received.comment",
+            "seller", playerName(seller),
+            "amount", format(amount),
+            "item", itemLabel(handStack),
+            "comment", normalizedComment
+        )), false);
+        return 1;
+    }
+
+    private static int confirmBuy(ServerCommandSource source) throws CommandSyntaxException {
+        ServerPlayerEntity buyer = source.getPlayerOrThrow();
+        PendingSale pending = pendingSales.remove(buyer.getUuid());
+        if (pending == null) {
+            source.sendError(Text.literal(message("buyconfirm.none")));
+            return 0;
+        }
+
+        if (Instant.now().isAfter(pending.expiresAt())) {
+            source.sendError(Text.literal(message("buyconfirm.expired")));
+            return 0;
+        }
+
+        ServerPlayerEntity seller = source.getServer().getPlayerManager().getPlayer(pending.sellerId());
+        if (seller == null) {
+            source.sendError(Text.literal(message("sale.seller-offline")));
+            return 0;
+        }
+
+        ItemStack currentStack = seller.getMainHandStack();
+        if (!ItemStack.areEqual(currentStack, pending.itemStack())) {
+            source.sendError(Text.literal(message("sale.item-changed")));
+            return 0;
+        }
+
+        if (buyer.getInventory().getEmptySlot() < 0) {
+            source.sendError(Text.literal(message("sale.buyer-inventory-full")));
+            return 0;
+        }
+
+        long feeAmount = calculateTransferFee(pending.amount(), config);
+        RubleState state = RubleState.get(source.getServer());
+        state.rememberName(seller.getUuid(), playerName(seller));
+        state.rememberName(buyer.getUuid(), playerName(buyer));
+
+        Instant now = Instant.now();
+        if (!source.hasPermissionLevel(2) && !checkPayLimits(source, buyer.getUuid(), pending.amount(), now)) {
+            return 0;
+        }
+
+        UUID feeRecipientId = feeRecipientId(source, state, feeAmount);
+        RubleState.TransferResult result = state.transfer(
+            buyer.getUuid(),
+            seller.getUuid(),
+            feeRecipientId,
+            pending.amount(),
+            feeAmount,
+            config.transferDebtLimit()
+        );
+
+        if (result == RubleState.TransferResult.NOT_ENOUGH_MONEY) {
+            source.sendError(Text.literal(message(
+                "pay.not-enough",
+                "limit", format(config.transferDebtLimit()),
+                "balance", format(state.getBalance(buyer.getUuid()))
+            )));
+            return 0;
+        }
+
+        if (result == RubleState.TransferResult.OVERFLOW) {
+            source.sendError(Text.literal(message("pay.overflow")));
+            return 0;
+        }
+
+        if (result == RubleState.TransferResult.FEE_OVERFLOW) {
+            source.sendError(Text.literal(message("pay.fee-overflow")));
+            return 0;
+        }
+
+        recordSuccessfulPay(buyer.getUuid(), pending.amount(), now);
+
+        ItemStack soldStack = pending.itemStack().copy();
+        seller.setStackInHand(Hand.MAIN_HAND, ItemStack.EMPTY);
+        buyer.getInventory().insertStack(soldStack);
+
+        String saleComment = saleReason(itemLabel(pending.itemStack()), pending.comment());
+        state.addTransaction(RubleTransaction.transfer(
+            now,
+            buyer.getUuid(),
+            playerName(buyer),
+            seller.getUuid(),
+            playerName(seller),
+            pending.amount(),
+            feeAmount,
+            Optional.ofNullable(feeRecipientId),
+            feeRecipientName(state, feeRecipientId),
+            saleComment
+        ));
+
+        sendMessage(source, message(
+            pending.comment().isBlank() ? "buyconfirm.done" : "buyconfirm.done.comment",
+            "amount", format(pending.amount()),
+            "seller", playerName(seller),
+            "item", itemLabel(pending.itemStack()),
+            "comment", pending.comment()
+        ));
+        seller.sendMessage(Text.literal(message(
+            pending.comment().isBlank() ? "sale.sold" : "sale.sold.comment",
+            "buyer", playerName(buyer),
+            "amount", format(pending.amount()),
+            "item", itemLabel(pending.itemStack()),
+            "comment", pending.comment()
+        )), false);
+        return 1;
+    }
+
+    private static int cancelBuy(ServerCommandSource source) throws CommandSyntaxException {
+        ServerPlayerEntity buyer = source.getPlayerOrThrow();
+        PendingSale pending = pendingSales.remove(buyer.getUuid());
+        if (pending == null) {
+            source.sendError(Text.literal(message("buyconfirm.none")));
+            return 0;
+        }
+
+        sendMessage(source, message("buycancel.done", "seller", pending.sellerName(), "item", itemLabel(pending.itemStack())));
+        ServerPlayerEntity seller = source.getServer().getPlayerManager().getPlayer(pending.sellerId());
+        if (seller != null) {
+            seller.sendMessage(Text.literal(message("sale.cancelled", "buyer", playerName(buyer), "item", itemLabel(pending.itemStack()))), false);
+        }
         return 1;
     }
 
@@ -815,6 +1028,10 @@ public final class PowerRubleMod implements ModInitializer {
         return player.getName().getString();
     }
 
+    private static String itemLabel(ItemStack stack) {
+        return stack.getName().getString() + " x" + stack.getCount();
+    }
+
     private static GameProfile singleProfile(Collection<GameProfile> profiles) throws CommandSyntaxException {
         if (profiles.isEmpty()) {
             throw EMPTY_PROFILE_EXCEPTION.create();
@@ -990,6 +1207,10 @@ public final class PowerRubleMod implements ModInitializer {
         return reason == null ? "" : reason.trim();
     }
 
+    private static String saleReason(String itemLabel, String comment) {
+        return comment.isBlank() ? "sale " + itemLabel : "sale " + itemLabel + ", " + comment;
+    }
+
     private static String message(String key, String... replacements) {
         String[] withCurrency = new String[replacements.length + 2];
         System.arraycopy(replacements, 0, withCurrency, 0, replacements.length);
@@ -1015,6 +1236,18 @@ public final class PowerRubleMod implements ModInitializer {
     }
 
     private record PendingTransfer(UUID targetId, String targetName, long amount, long fee, String comment, Instant expiresAt) {
+    }
+
+    private record PendingSale(
+        UUID sellerId,
+        String sellerName,
+        UUID buyerId,
+        String buyerName,
+        long amount,
+        ItemStack itemStack,
+        String comment,
+        Instant expiresAt
+    ) {
     }
 
     private record DailyTransferUsage(LocalDate date, long amount) {

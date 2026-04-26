@@ -9,6 +9,9 @@ Server-side Fabric 1.20.1 economy mod.
 - `/pay <player> <amount>` - transfer currency to a player, including offline players known to the server.
 - `/payconfirm` - confirm a large pending transfer.
 - `/paycancel` - cancel a large pending transfer.
+- `/sell <player> <price> [comment]` - offer the item in your main hand to a specific online player.
+- `/buyconfirm` - confirm a pending direct item purchase.
+- `/buycancel` - cancel a pending direct item purchase.
 - `/topbalance` - show the richest balances. Can be disabled for regular players in config.
 - `/topdebt` - show the largest negative balances. Can be disabled for regular players in config.
 - `/bank balance` - show the server bank balance when bank support is enabled.
