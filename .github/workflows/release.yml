@@ -39,6 +39,7 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             "build/libs/power-ruble-${GITHUB_REF_NAME#v}.jar" \
             "build/libs/power-ruble-${GITHUB_REF_NAME#v}-sources.jar" \
+            "build/devlibs/power-ruble-${GITHUB_REF_NAME#v}-dev.jar" \
             "addons/power-ruble-orgcontracts/build/libs/power-ruble-orgcontracts-${GITHUB_REF_NAME#v}.jar" \
             "addons/power-ruble-orgcontracts/build/libs/power-ruble-orgcontracts-${GITHUB_REF_NAME#v}-sources.jar" \
             --title "Power Ruble ${GITHUB_REF_NAME}" \
