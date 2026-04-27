@@ -22,6 +22,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Bootstrap base dev jar
+        run: |
+          cp settings.gradle settings.gradle.bak
+          grep -v "include('addons:power-ruble-orgcontracts')" settings.gradle.bak > settings.gradle
+          ./gradlew build
+          mv settings.gradle.bak settings.gradle
+
       - name: Build
         run: ./gradlew build
 
@@ -32,5 +39,7 @@ jobs:
           gh release create "${GITHUB_REF_NAME}" \
             "build/libs/power-ruble-${GITHUB_REF_NAME#v}.jar" \
             "build/libs/power-ruble-${GITHUB_REF_NAME#v}-sources.jar" \
+            "addons/power-ruble-orgcontracts/build/libs/power-ruble-orgcontracts-${GITHUB_REF_NAME#v}.jar" \
+            "addons/power-ruble-orgcontracts/build/libs/power-ruble-orgcontracts-${GITHUB_REF_NAME#v}-sources.jar" \
             --title "Power Ruble ${GITHUB_REF_NAME}" \
             --notes "Power Ruble release ${GITHUB_REF_NAME}."

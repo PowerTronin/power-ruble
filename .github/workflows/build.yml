@@ -24,5 +24,12 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Bootstrap base dev jar
+        run: |
+          cp settings.gradle settings.gradle.bak
+          grep -v "include('addons:power-ruble-orgcontracts')" settings.gradle.bak > settings.gradle
+          ./gradlew build
+          mv settings.gradle.bak settings.gradle
+
       - name: Build
         run: ./gradlew build
