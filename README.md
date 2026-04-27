@@ -5,7 +5,7 @@ Server-side Fabric 1.20.1 economy mod.
 ## Optional Addons
 
 - `power-ruble-orgcontracts` - separate addon jar with organizations, shared balances, and escrow-backed item delivery contracts.
-- addon sources live in [addons/power-ruble-orgcontracts](/home/amd-btw/projects/power-ruble/addons/power-ruble-orgcontracts/README.md)
+- addon repository: https://github.com/PowerTronin/power-ruble-orgcontracts
 
 ## Commands
 
