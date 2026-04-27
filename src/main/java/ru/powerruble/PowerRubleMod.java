@@ -28,6 +28,7 @@ import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import ru.powerruble.api.PowerRuble;
 
 public final class PowerRubleMod implements ModInitializer {
     public static final String MOD_ID = "power-ruble";
@@ -53,6 +54,7 @@ public final class PowerRubleMod implements ModInitializer {
     public void onInitialize() {
         config = RubleConfig.load();
         messages = RubleMessages.load();
+        PowerRuble.setApi(new PowerRubleApiImpl());
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
             dispatcher.register(
@@ -1221,6 +1223,18 @@ public final class PowerRubleMod implements ModInitializer {
 
     static String currencyName() {
         return config == null ? "RUB" : config.currencyName();
+    }
+
+    static RubleConfig config() {
+        return config;
+    }
+
+    static RubleMessages messages() {
+        return messages;
+    }
+
+    static UUID bankId() {
+        return BANK_ID;
     }
 
     static int historyPerPlayerEntries() {
