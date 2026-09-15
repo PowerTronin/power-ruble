@@ -835,8 +835,21 @@ public final class PowerRubleMod implements ModInitializer {
         String playerName = profile.getName();
         RubleState state = RubleState.get(source.getServer());
         state.rememberName(playerId, playerName);
-        if (!state.subtractAllowingDebt(playerId, amount)) {
+        rememberBank(state);
+
+        RubleState.TransferResult result = state.transfer(playerId, BANK_ID, null, amount, 0L, Long.MIN_VALUE);
+        if (result == RubleState.TransferResult.NOT_ENOUGH_MONEY) {
             source.sendError(Text.literal(message("admin.take.too-small")));
+            return 0;
+        }
+
+        if (result == RubleState.TransferResult.OVERFLOW) {
+            source.sendError(Text.literal(message("bank.overflow")));
+            return 0;
+        }
+
+        if (result != RubleState.TransferResult.OK) {
+            source.sendError(Text.literal(message("pay.overflow")));
             return 0;
         }
 
@@ -846,6 +859,7 @@ public final class PowerRubleMod implements ModInitializer {
             "amount", format(amount),
             "player", playerName,
             "balance", format(state.getBalance(playerId)),
+            "bankBalance", format(state.getBalance(BANK_ID)),
             "reason", normalizedReason
         ));
         ServerPlayerEntity onlinePlayer = source.getServer().getPlayerManager().getPlayer(playerId);
@@ -856,7 +870,15 @@ public final class PowerRubleMod implements ModInitializer {
                 "reason", normalizedReason
             )), false);
         }
-        state.addTransaction(RubleTransaction.admin(RubleTransaction.Type.ADMIN_TAKE, Instant.now(), playerId, playerName, amount, normalizedReason));
+        state.addTransaction(RubleTransaction.adminTakeToBank(
+            Instant.now(),
+            playerId,
+            playerName,
+            BANK_ID,
+            config.bankAccountName(),
+            amount,
+            normalizedReason
+        ));
         return 1;
     }
 

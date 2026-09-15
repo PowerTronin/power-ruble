@@ -23,7 +23,7 @@ Server-side Fabric 1.20.1 economy mod.
 - `/bank deposit <amount> [comment]` - transfer money from your balance to the server bank.
 - `/ruble help` - show mod commands.
 - `/ruble give <player> <amount>` - add rubles, including offline players known to the server, operator-only.
-- `/ruble take <player> <amount> [reason]` - remove rubles, including offline players known to the server, operator-only.
+- `/ruble take <player> <amount> [reason]` - transfer rubles from a player to the server bank, including offline players known to the server, operator-only.
 - `/ruble set <player> <amount>` - set balance, including offline players known to the server, operator-only.
 - `/ruble history <player>` - show recent economy operations, including offline players known to the server, operator-only.
 - `/ruble paylog <player>` - show structured operation log for a player, operator-only.
@@ -36,7 +36,7 @@ Server-side Fabric 1.20.1 economy mod.
 - `/ruble bank pay <player> <amount> [comment]` - transfer money from the server bank to a player, operator-only.
 - `/ruble reload` - reload config, operator-only.
 
-Player transfers can move the sender down to the configured debt limit. Operator `/ruble take` can move a player below zero without a fixed debt limit.
+Player transfers can move the sender down to the configured debt limit. Operator `/ruble take` transfers the amount to the server bank and can move a player below zero without a fixed debt limit.
 
 Balances and structured operation logs are saved in the overworld persistent state and survive server restarts, including negative balances.
 

@@ -116,6 +116,34 @@ public record RubleTransaction(
         );
     }
 
+    public static RubleTransaction adminTakeToBank(
+        Instant time,
+        UUID targetId,
+        String targetName,
+        UUID bankId,
+        String bankName,
+        long amount,
+        String reason
+    ) {
+        return new RubleTransaction(
+            UUID.randomUUID().toString(),
+            Type.ADMIN_TAKE,
+            time,
+            Optional.empty(),
+            "admin",
+            Optional.of(targetId),
+            targetName,
+            Optional.of(bankId),
+            bankName,
+            amount,
+            0L,
+            Optional.empty(),
+            "",
+            reason,
+            ""
+        );
+    }
+
     public static RubleTransaction bank(Type type, Instant time, UUID bankId, String bankName, long amount, String reason) {
         return new RubleTransaction(
             UUID.randomUUID().toString(),
@@ -196,7 +224,7 @@ public record RubleTransaction(
         return switch (type) {
             case TRANSFER -> time + " transfer " + fromName + " -> " + toName + ": " + amountText + feeSuffix + reasonSuffix();
             case ADMIN_GIVE -> time + " admin give -> " + toName + ": +" + amountText;
-            case ADMIN_TAKE -> time + " admin take -> " + toName + ": -" + amountText + reasonSuffix();
+            case ADMIN_TAKE -> describeAdminTake(amountText);
             case ADMIN_SET -> time + " admin set -> " + toName + ": =" + amountText;
             case BANK_GIVE -> time + " bank give: +" + amountText;
             case BANK_TAKE -> time + " bank take: -" + amountText;
@@ -236,6 +264,14 @@ public record RubleTransaction(
 
     private String reasonSuffix() {
         return reason.isBlank() ? "" : ", reason: " + reason;
+    }
+
+    private String describeAdminTake(String amountText) {
+        if (fromId.isPresent() && toId.isPresent()) {
+            return time + " admin take " + fromName + " -> " + toName + ": " + amountText + reasonSuffix();
+        }
+
+        return time + " admin take -> " + toName + ": -" + amountText + reasonSuffix();
     }
 
     public enum Type {

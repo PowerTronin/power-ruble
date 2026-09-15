@@ -94,6 +94,18 @@ final class RubleStateTest {
     }
 
     @Test
+    void transferCanMoveAdminTakeToBankWhileAllowingDebt() {
+        RubleState state = new RubleState();
+        state.setBalance(SENDER, 10L);
+
+        RubleState.TransferResult result = state.transfer(SENDER, FEE_RECIPIENT, null, 25L, 0L, Long.MIN_VALUE);
+
+        assertEquals(RubleState.TransferResult.OK, result);
+        assertEquals(-15L, state.getBalance(SENDER));
+        assertEquals(25L, state.getBalance(FEE_RECIPIENT));
+    }
+
+    @Test
     void historyKeepsTwentyNewestEntries() {
         RubleState state = new RubleState();
 
@@ -176,6 +188,25 @@ final class RubleStateTest {
         );
 
         assertEquals("штраф", transaction.reason());
+        assertTrue(transaction.describe("RUB").contains("admin take -> target: -15 RUB"));
+        assertTrue(transaction.describe("RUB").contains("reason: штраф"));
+    }
+
+    @Test
+    void adminTakeToBankTransactionInvolvesPlayerAndBank() {
+        RubleTransaction transaction = RubleTransaction.adminTakeToBank(
+            Instant.parse("2026-04-22T00:00:00Z"),
+            TARGET,
+            "target",
+            FEE_RECIPIENT,
+            "bank",
+            15L,
+            "штраф"
+        );
+
+        assertTrue(transaction.involves(TARGET));
+        assertTrue(transaction.involves(FEE_RECIPIENT));
+        assertTrue(transaction.describe("RUB").contains("target -> bank"));
         assertTrue(transaction.describe("RUB").contains("reason: штраф"));
     }
 
