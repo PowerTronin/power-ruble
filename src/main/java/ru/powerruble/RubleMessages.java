@@ -60,6 +60,7 @@ public final class RubleMessages {
         properties.setProperty("help.top", "/topbalance - показать топ балансов");
         properties.setProperty("help.topdebt", "/topdebt - показать топ долгов");
         properties.setProperty("help.bank", "/bank balance, /bank deposit <сумма> [комментарий] - операции с банком");
+        properties.setProperty("help.players", "/ruble players, /ruble online - показать известных и онлайн игроков");
         properties.setProperty("help.self", "/ruble help - показать эту справку");
         properties.setProperty("help.admin.balance", "/balance <игрок> - показать баланс игрока");
         properties.setProperty("help.admin.give", "/ruble give <игрок> <сумма> - начислить {currency}");
@@ -124,6 +125,12 @@ public final class RubleMessages {
         properties.setProperty("topdebt.empty", "Долгов пока нет.");
         properties.setProperty("topdebt.header", "Топ долгов:");
         properties.setProperty("topdebt.entry", "#{rank}. {player}: {amount}");
+        properties.setProperty("players.empty", "Известных игроков пока нет.");
+        properties.setProperty("players.header", "Известные игроки ({count}):");
+        properties.setProperty("players.entry", "- {player} ({status})");
+        properties.setProperty("online.empty", "Сейчас на сервере никого нет.");
+        properties.setProperty("online.header", "Онлайн игроки ({count}):");
+        properties.setProperty("online.entry", "- {player}");
         properties.setProperty("bank.disabled", "Банк отключен.");
         properties.setProperty("bank.balance", "Баланс банка: {amount}");
         properties.setProperty("bank.overflow", "Баланс банка слишком большой для начисления.");

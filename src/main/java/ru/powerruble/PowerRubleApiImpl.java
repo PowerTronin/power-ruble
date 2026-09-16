@@ -4,6 +4,7 @@ import java.util.UUID;
 import net.minecraft.server.MinecraftServer;
 import org.jetbrains.annotations.Nullable;
 import ru.powerruble.api.PowerRubleApi;
+import ru.powerruble.api.PowerRubleEvents;
 
 final class PowerRubleApiImpl implements PowerRubleApi {
     @Override
@@ -77,5 +78,6 @@ final class PowerRubleApiImpl implements PowerRubleApi {
     @Override
     public void addTransaction(MinecraftServer server, RubleTransaction transaction) {
         state(server).addTransaction(transaction);
+        PowerRubleEvents.notifyTransaction(server, transaction);
     }
 }

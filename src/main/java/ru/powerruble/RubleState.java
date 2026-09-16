@@ -3,8 +3,11 @@ package ru.powerruble;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtList;
@@ -92,6 +95,32 @@ public final class RubleState extends PersistentState {
 
         names.put(playerId, name);
         markDirty();
+    }
+
+    public boolean hasKnownAccount(UUID accountId) {
+        return names.containsKey(accountId) || balances.containsKey(accountId);
+    }
+
+    public Optional<BalanceEntry> findKnownAccountByName(String name) {
+        if (name == null || name.isBlank()) {
+            return Optional.empty();
+        }
+
+        String normalizedName = name.trim();
+        return knownAccounts().stream()
+            .filter(entry -> entry.name().equalsIgnoreCase(normalizedName))
+            .findFirst();
+    }
+
+    public List<BalanceEntry> knownAccounts() {
+        Set<UUID> accountIds = new HashSet<>();
+        accountIds.addAll(names.keySet());
+        accountIds.addAll(balances.keySet());
+
+        return accountIds.stream()
+            .map(accountId -> new BalanceEntry(accountId, getName(accountId), getBalance(accountId)))
+            .sorted(Comparator.comparing(BalanceEntry::name, String.CASE_INSENSITIVE_ORDER))
+            .toList();
     }
 
     public List<BalanceEntry> topBalances(int limit) {

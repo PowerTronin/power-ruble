@@ -130,6 +130,16 @@ final class RubleStateTest {
     }
 
     @Test
+    void rememberedNameMakesZeroBalanceAccountKnown() {
+        RubleState state = new RubleState();
+        state.rememberName(TARGET, "PlayerTwo");
+
+        assertTrue(state.hasKnownAccount(TARGET));
+        assertEquals(1, state.knownAccounts().size());
+        assertEquals(TARGET, state.findKnownAccountByName("playertwo").orElseThrow().playerId());
+    }
+
+    @Test
     void topDebtsReturnsNegativeBalancesFirst() {
         RubleState state = new RubleState();
         state.setBalance(SENDER, -10L);

@@ -29,6 +29,7 @@ import net.minecraft.util.Hand;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import ru.powerruble.api.PowerRuble;
+import ru.powerruble.api.PowerRubleEvents;
 
 public final class PowerRubleMod implements ModInitializer {
     public static final String MOD_ID = "power-ruble";
@@ -42,6 +43,8 @@ public final class PowerRubleMod implements ModInitializer {
         new SimpleCommandExceptionType(Text.literal("Укажите ровно одного игрока."));
     private static final DynamicCommandExceptionType UNKNOWN_ONLINE_PROFILE_EXCEPTION =
         new DynamicCommandExceptionType(name -> Text.literal("Игрок " + name + " не найден на online-mode сервере."));
+    private static final DynamicCommandExceptionType UNKNOWN_PROFILE_EXCEPTION =
+        new DynamicCommandExceptionType(name -> Text.literal("Игрок " + name + " не найден. Игрок должен хотя бы раз зайти на сервер."));
 
     private static RubleConfig config;
     private static RubleMessages messages;
@@ -71,18 +74,18 @@ public final class PowerRubleMod implements ModInitializer {
 
             dispatcher.register(
                 CommandManager.literal("pay")
-                    .then(CommandManager.argument("player", GameProfileArgumentType.gameProfile())
+                    .then(CommandManager.argument("player", StringArgumentType.word())
                         .then(CommandManager.argument("amount", LongArgumentType.longArg(1))
                             .executes(context -> pay(
                                 context.getSource(),
-                                singleProfile(GameProfileArgumentType.getProfileArgument(context, "player")),
+                                StringArgumentType.getString(context, "player"),
                                 LongArgumentType.getLong(context, "amount"),
                                 ""
                             ))
                             .then(CommandManager.argument("comment", StringArgumentType.greedyString())
                                 .executes(context -> pay(
                                     context.getSource(),
-                                    singleProfile(GameProfileArgumentType.getProfileArgument(context, "player")),
+                                    StringArgumentType.getString(context, "player"),
                                     LongArgumentType.getLong(context, "amount"),
                                     StringArgumentType.getString(context, "comment")
                                 ))
@@ -170,6 +173,12 @@ public final class PowerRubleMod implements ModInitializer {
                     .then(CommandManager.literal("help")
                         .executes(context -> showHelp(context.getSource()))
                     )
+                    .then(CommandManager.literal("players")
+                        .executes(context -> showKnownPlayers(context.getSource()))
+                    )
+                    .then(CommandManager.literal("online")
+                        .executes(context -> showOnlinePlayers(context.getSource()))
+                    )
                     .then(CommandManager.literal("reload")
                         .requires(source -> source.hasPermissionLevel(2))
                         .executes(context -> reloadConfig(context.getSource()))
@@ -229,18 +238,18 @@ public final class PowerRubleMod implements ModInitializer {
                             )
                         )
                         .then(CommandManager.literal("pay")
-                            .then(CommandManager.argument("player", GameProfileArgumentType.gameProfile())
+                            .then(CommandManager.argument("player", StringArgumentType.word())
                                 .then(CommandManager.argument("amount", LongArgumentType.longArg(1))
                                     .executes(context -> payFromBank(
                                         context.getSource(),
-                                        singleProfile(GameProfileArgumentType.getProfileArgument(context, "player")),
+                                        StringArgumentType.getString(context, "player"),
                                         LongArgumentType.getLong(context, "amount"),
                                         ""
                                     ))
                                     .then(CommandManager.argument("comment", StringArgumentType.greedyString())
                                         .executes(context -> payFromBank(
                                             context.getSource(),
-                                            singleProfile(GameProfileArgumentType.getProfileArgument(context, "player")),
+                                            StringArgumentType.getString(context, "player"),
                                             LongArgumentType.getLong(context, "amount"),
                                             StringArgumentType.getString(context, "comment")
                                         ))
@@ -315,6 +324,7 @@ public final class PowerRubleMod implements ModInitializer {
         if (config.bankEnabled() || source.hasPermissionLevel(2)) {
             sendMessage(source, message("help.bank"));
         }
+        sendMessage(source, message("help.players"));
         sendMessage(source, message("help.self"));
 
         if (source.hasPermissionLevel(2)) {
@@ -338,6 +348,40 @@ public final class PowerRubleMod implements ModInitializer {
         pendingTransfers.clear();
         pendingSales.clear();
         sendMessage(source, message("config.reloaded"));
+        return 1;
+    }
+
+    private static int showKnownPlayers(ServerCommandSource source) {
+        RubleState state = RubleState.get(source.getServer());
+        rememberOnlinePlayers(source, state);
+        var entries = state.knownAccounts().stream()
+            .filter(entry -> !BANK_ID.equals(entry.playerId()))
+            .toList();
+        if (entries.isEmpty()) {
+            sendMessage(source, message("players.empty"));
+            return 1;
+        }
+
+        sendMessage(source, message("players.header", "count", Integer.toString(entries.size())));
+        entries.forEach(entry -> sendMessage(source, message(
+            "players.entry",
+            "player", entry.name(),
+            "status", onlineStatus(source, entry.playerId())
+        )));
+        return 1;
+    }
+
+    private static int showOnlinePlayers(ServerCommandSource source) {
+        var onlinePlayers = source.getServer().getPlayerManager().getPlayerList();
+        if (onlinePlayers.isEmpty()) {
+            sendMessage(source, message("online.empty"));
+            return 1;
+        }
+
+        RubleState state = RubleState.get(source.getServer());
+        rememberOnlinePlayers(source, state);
+        sendMessage(source, message("online.header", "count", Integer.toString(onlinePlayers.size())));
+        onlinePlayers.forEach(player -> sendMessage(source, message("online.entry", "player", playerName(player))));
         return 1;
     }
 
@@ -369,7 +413,7 @@ public final class PowerRubleMod implements ModInitializer {
         return 1;
     }
 
-    private static int pay(ServerCommandSource source, GameProfile targetProfile, long amount, String comment) throws CommandSyntaxException {
+    private static int pay(ServerCommandSource source, String targetNameArgument, long amount, String comment) throws CommandSyntaxException {
         ServerPlayerEntity sender = source.getPlayerOrThrow();
         String normalizedComment = normalizeReason(comment);
 
@@ -383,8 +427,10 @@ public final class PowerRubleMod implements ModInitializer {
             return 0;
         }
 
-        UUID targetId = profileId(source, targetProfile);
-        String targetName = targetProfile.getName();
+        RubleState state = RubleState.get(source.getServer());
+        KnownAccount target = requireKnownPlayer(source, state, targetNameArgument);
+        UUID targetId = target.id();
+        String targetName = target.name();
 
         if (sender.getUuid().equals(targetId)) {
             source.sendError(Text.literal(message("pay.self")));
@@ -576,7 +622,7 @@ public final class PowerRubleMod implements ModInitializer {
         buyer.getInventory().insertStack(soldStack);
 
         String saleComment = saleReason(itemLabel(pending.itemStack()), pending.comment());
-        state.addTransaction(RubleTransaction.transfer(
+        addTransaction(source.getServer(), state, RubleTransaction.transfer(
             now,
             buyer.getUuid(),
             playerName(buyer),
@@ -690,7 +736,7 @@ public final class PowerRubleMod implements ModInitializer {
             )), false);
         }
 
-        state.addTransaction(RubleTransaction.transfer(
+        addTransaction(source.getServer(), state, RubleTransaction.transfer(
             now,
             sender.getUuid(),
             playerName(sender),
@@ -826,7 +872,7 @@ public final class PowerRubleMod implements ModInitializer {
         if (onlinePlayer != null) {
             onlinePlayer.sendMessage(Text.literal(message("admin.give.received", "amount", format(amount))), false);
         }
-        state.addTransaction(RubleTransaction.admin(RubleTransaction.Type.ADMIN_GIVE, Instant.now(), playerId, playerName, amount, "admin give"));
+        addTransaction(source.getServer(), state, RubleTransaction.admin(RubleTransaction.Type.ADMIN_GIVE, Instant.now(), playerId, playerName, amount, "admin give"));
         return 1;
     }
 
@@ -870,7 +916,7 @@ public final class PowerRubleMod implements ModInitializer {
                 "reason", normalizedReason
             )), false);
         }
-        state.addTransaction(RubleTransaction.adminTakeToBank(
+        addTransaction(source.getServer(), state, RubleTransaction.adminTakeToBank(
             Instant.now(),
             playerId,
             playerName,
@@ -894,7 +940,7 @@ public final class PowerRubleMod implements ModInitializer {
         if (onlinePlayer != null) {
             onlinePlayer.sendMessage(Text.literal(message("admin.set.received", "amount", format(amount))), false);
         }
-        state.addTransaction(RubleTransaction.admin(RubleTransaction.Type.ADMIN_SET, Instant.now(), playerId, playerName, amount, "admin set"));
+        addTransaction(source.getServer(), state, RubleTransaction.admin(RubleTransaction.Type.ADMIN_SET, Instant.now(), playerId, playerName, amount, "admin set"));
         return 1;
     }
 
@@ -919,7 +965,7 @@ public final class PowerRubleMod implements ModInitializer {
         }
 
         sendMessage(source, message("bank.give.done", "amount", format(amount), "balance", format(state.getBalance(BANK_ID))));
-        state.addTransaction(RubleTransaction.bank(RubleTransaction.Type.BANK_GIVE, Instant.now(), BANK_ID, config.bankAccountName(), amount, "bank give"));
+        addTransaction(source.getServer(), state, RubleTransaction.bank(RubleTransaction.Type.BANK_GIVE, Instant.now(), BANK_ID, config.bankAccountName(), amount, "bank give"));
         return 1;
     }
 
@@ -952,7 +998,7 @@ public final class PowerRubleMod implements ModInitializer {
             "balance", format(state.getBalance(BANK_ID)),
             "comment", normalizedComment
         ));
-        state.addTransaction(RubleTransaction.transfer(
+        addTransaction(source.getServer(), state, RubleTransaction.transfer(
             Instant.now(),
             sender.getUuid(),
             playerName(sender),
@@ -976,14 +1022,15 @@ public final class PowerRubleMod implements ModInitializer {
         }
 
         sendMessage(source, message("bank.take.done", "amount", format(amount), "balance", format(state.getBalance(BANK_ID))));
-        state.addTransaction(RubleTransaction.bank(RubleTransaction.Type.BANK_TAKE, Instant.now(), BANK_ID, config.bankAccountName(), amount, "bank take"));
+        addTransaction(source.getServer(), state, RubleTransaction.bank(RubleTransaction.Type.BANK_TAKE, Instant.now(), BANK_ID, config.bankAccountName(), amount, "bank take"));
         return 1;
     }
 
-    private static int payFromBank(ServerCommandSource source, GameProfile profile, long amount, String comment) throws CommandSyntaxException {
-        UUID targetId = profileId(source, profile);
-        String targetName = profile.getName();
+    private static int payFromBank(ServerCommandSource source, String targetNameArgument, long amount, String comment) throws CommandSyntaxException {
         RubleState state = RubleState.get(source.getServer());
+        KnownAccount target = requireKnownPlayer(source, state, targetNameArgument);
+        UUID targetId = target.id();
+        String targetName = target.name();
         rememberBank(state);
         state.rememberName(targetId, targetName);
         String normalizedComment = normalizeReason(comment);
@@ -1014,7 +1061,7 @@ public final class PowerRubleMod implements ModInitializer {
                 "comment", normalizedComment
             )), false);
         }
-        state.addTransaction(RubleTransaction.transfer(
+        addTransaction(source.getServer(), state, RubleTransaction.transfer(
             Instant.now(),
             BANK_ID,
             config.bankAccountName(),
@@ -1034,8 +1081,13 @@ public final class PowerRubleMod implements ModInitializer {
         rememberBank(state);
         state.setBalance(BANK_ID, amount);
         sendMessage(source, message("bank.set.done", "amount", format(amount)));
-        state.addTransaction(RubleTransaction.bank(RubleTransaction.Type.BANK_SET, Instant.now(), BANK_ID, config.bankAccountName(), amount, "bank set"));
+        addTransaction(source.getServer(), state, RubleTransaction.bank(RubleTransaction.Type.BANK_SET, Instant.now(), BANK_ID, config.bankAccountName(), amount, "bank set"));
         return 1;
+    }
+
+    private static void addTransaction(net.minecraft.server.MinecraftServer server, RubleState state, RubleTransaction transaction) {
+        state.addTransaction(transaction);
+        PowerRubleEvents.notifyTransaction(server, transaction);
     }
 
     private static void sendMessage(ServerCommandSource source, String message) {
@@ -1052,6 +1104,19 @@ public final class PowerRubleMod implements ModInitializer {
         return player.getName().getString();
     }
 
+    private static void rememberOnlinePlayers(ServerCommandSource source, RubleState state) {
+        source.getServer().getPlayerManager().getPlayerList()
+            .forEach(player -> state.rememberName(player.getUuid(), playerName(player)));
+    }
+
+    private static String onlineStatus(ServerCommandSource source, UUID playerId) {
+        return source.getServer().getPlayerManager().getPlayer(playerId) == null ? "offline" : "online";
+    }
+
+    private static String cleanName(String name, String fallback) {
+        return name == null || name.isBlank() ? fallback : name;
+    }
+
     private static String itemLabel(ItemStack stack) {
         return stack.getName().getString() + " x" + stack.getCount();
     }
@@ -1066,6 +1131,40 @@ public final class PowerRubleMod implements ModInitializer {
         }
 
         return profiles.iterator().next();
+    }
+
+    private static KnownAccount requireKnownPlayer(ServerCommandSource source, RubleState state, String rawName) throws CommandSyntaxException {
+        String name = rawName == null ? "" : rawName.trim();
+        if (name.isBlank()) {
+            throw UNKNOWN_PROFILE_EXCEPTION.create(rawName);
+        }
+
+        ServerPlayerEntity onlinePlayer = source.getServer().getPlayerManager().getPlayer(name);
+        if (onlinePlayer != null) {
+            return new KnownAccount(onlinePlayer.getUuid(), playerName(onlinePlayer));
+        }
+
+        Optional<RubleState.BalanceEntry> knownByName = state.findKnownAccountByName(name);
+        if (knownByName.isPresent()) {
+            RubleState.BalanceEntry entry = knownByName.get();
+            return new KnownAccount(entry.playerId(), entry.name());
+        }
+
+        Optional<GameProfile> cachedProfile = cachedOfflineProfile(source, name);
+        if (cachedProfile.isPresent() && cachedProfile.get().getId() != null) {
+            GameProfile cached = cachedProfile.get();
+            return new KnownAccount(cached.getId(), cleanName(cached.getName(), name));
+        }
+
+        throw UNKNOWN_PROFILE_EXCEPTION.create(name);
+    }
+
+    private static Optional<GameProfile> cachedOfflineProfile(ServerCommandSource source, String name) {
+        if (source.getServer().isOnlineMode()) {
+            return Optional.empty();
+        }
+
+        return source.getServer().getUserCache().getByUuid(offlineUuid(name));
     }
 
     private static GameProfile findProfile(ServerCommandSource source, String name) {
@@ -1287,5 +1386,8 @@ public final class PowerRubleMod implements ModInitializer {
     }
 
     private record DailyTransferUsage(LocalDate date, long amount) {
+    }
+
+    private record KnownAccount(UUID id, String name) {
     }
 }
